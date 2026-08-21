@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Claude Code local overrides (vendored skills in .claude/skills are tracked)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db

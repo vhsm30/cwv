@@ -1,0 +1,8 @@
+# Field Notes Supply
+
+> A lightweight storefront for durable, considered everyday goods. It is a client-only demo and does not process payments.
+
+## Pages
+
+- [Home](./): The public storefront with a collection of paper goods, kitchenware, and pantry items.
+- The bag interaction is local to the browser; there is no checkout or payment flow.
