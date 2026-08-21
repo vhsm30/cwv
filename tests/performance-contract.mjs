@@ -14,6 +14,12 @@ const heroSource = heroPicture.match(/<source[\s\S]*?>/)?.[0] ?? '';
 const heroPreload = html.match(/<link rel="preload" as="image"[\s\S]*?>/)?.[0] ?? '';
 const products = pictures.filter((p) => p.includes('class="product-image"'));
 
+// Backslash-free rule lookup; building regexes from strings bit us once already.
+const ruleBody = (selector) => {
+  const at = styles.indexOf(selector + '{');
+  return at === -1 ? '' : styles.slice(at + selector.length + 1, styles.indexOf('}', at));
+};
+
 const attribute = (tag, name) => Object.fromEntries(
   [...tag.matchAll(/([a-zA-Z-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]),
 )[name];
@@ -79,8 +85,6 @@ test('nothing render-blocking sits in the critical path', () => {
   assert.doesNotMatch(html, /\.css/);
   assert.match(styles, /\.hero\{/);
   assert.match(styles, /\.products\{/);
-  // picture must stay boxless or it, not the img, becomes the grid/flex item.
-  assert.match(styles, /picture\{display:contents\}/);
 });
 
 test('behavior stays external, deferred, and free of inline script', () => {
@@ -98,4 +102,25 @@ test('below-the-fold product images are lazy, sized, and deprioritised', () => {
     assert.match(img, /fetchpriority="low"/);
     assert.ok(attribute(img, 'width') && attribute(img, 'height'));
   }
+});
+
+test('aspect-ratio boxes release the HTML height attribute', () => {
+  // Without height:auto the height attribute wins outright and aspect-ratio is dead code,
+  // which silently stretched every product card to 875px tall.
+  for (const selector of ['.hero-image', '.product-image']) {
+    assert.ok(
+      ruleBody(selector).includes('height:auto'),
+      `${selector} needs height:auto or the height attribute overrides aspect-ratio`,
+    );
+  }
+  assert.ok(ruleBody('.product-image').includes('aspect-ratio:4/5'));
+});
+
+test('picture dissolves without promoting <source> to a layout item', () => {
+  // picture must stay boxless or it, not the img, becomes the grid/flex item.
+  assert.ok(ruleBody('picture').includes('display:contents'));
+  // display:contents promotes BOTH children of <picture>. An unhidden <source> becomes a second
+  // grid item, taking the hero image's column and pushing the image onto its own row. Mobile hides
+  // the damage because .hero is column-reverse there, so this only breaks the desktop Hero.
+  assert.ok(ruleBody('picture>source').includes('display:none'));
 });
