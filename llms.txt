@@ -1,8 +1,9 @@
 # Field Notes Supply
 
-> A lightweight storefront for durable, considered everyday goods. It is a client-only demo and does not process payments.
+> Field-tested objects for a slower, more considered everyday.
 
 ## Pages
 
-- [Home](./): The public storefront with a collection of paper goods, kitchenware, and pantry items.
-- The bag interaction is local to the browser; there is no checkout or payment flow.
+- [Home](./): A single-page storefront with a collection of paper goods, kitchenware, and pantry items. Nothing is purchasable: the bag is held in the browser and there is no checkout or payment.
+- [Shop](./#shop): The collection of three products, each with a name, a type, and a price.
+- [Our approach](./#story): A short note on choosing fewer, better objects.

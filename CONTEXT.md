@@ -74,3 +74,19 @@ _Avoid_: item, SKU, listing, card
 **Bag**:
 The visitor's running count of added Products, held in the browser and lost on reload.
 _Avoid_: cart, basket, order, checkout
+
+### The images
+
+**Slot**:
+The place in the Storefront where one image renders into a fixed box: the Hero's image and each
+Product's image.
+_Avoid_: image slot, placeholder, frame
+
+**Rung**:
+One candidate width of a Slot's image, offered in every format the Slot ships.
+_Avoid_: size, variant, resolution, breakpoint image
+
+**Master**:
+The largest honest source held for a Slot, from which every Rung is derived and which the
+Storefront never requests.
+_Avoid_: original, source image, raw
