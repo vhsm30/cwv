@@ -304,7 +304,8 @@ Recorded so the next review does not re-raise them.
   ADR records that rule; if it is meant to hold, it deserves one (`docs/adr/` does not exist yet).
 - **Glossary drift**: `.catalog` (`index.html:13`, `:39`) and `#shop` (`:20`, `:29`, `:39`, `:41`)
   in the markup; "demo shop" (`CLAUDE.md:8–9`), "audit", "fix", "guard" elsewhere in CLAUDE.md;
-  "demo" in `llms.txt:3` — all on CONTEXT.md's avoid lists. Domain housekeeping, not architecture.
+  "demo" in `llms.txt:3`, and "optimize"/"optimization" in CLAUDE.md prose (`:9`, `:75`) — all on
+  CONTEXT.md's avoid lists. Domain housekeeping, not architecture.
   The `CLAUDE.md` and `llms.txt` prose touched on 2026-08-24 uses the glossary words; the markup
   class and id names were left alone.
 

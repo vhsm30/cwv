@@ -57,7 +57,7 @@ End the report with a **Top recommendation** section: which candidate you'd tack
 
 See [HTML-REPORT.md](HTML-REPORT.md) for the full HTML scaffold, diagram patterns, and styling guidance.
 
-Do NOT propose interfaces yet. After the file is written, ask the user: "Which of these would you like to explore?"
+Do NOT propose interfaces yet. After the file is written, record the candidates in `BACKLOG.md` first (status Open, `file:line` evidence, CONTEXT.md vocabulary) per CLAUDE.md's backlog-first rule, then ask the user: "Which of these would you like to explore?" — picking one is the planning step the rule permits.
 
 ### 3. Grilling loop
 
