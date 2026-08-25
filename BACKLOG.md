@@ -4,11 +4,12 @@ Findings from the architecture review of 2026-08-24, recorded before any of them
 Domain words come from `CONTEXT.md`; architecture words (module, interface, seam, adapter, depth,
 leverage, locality) from `.claude/skills/codebase-design/SKILL.md`.
 
-**Status as of 2026-08-24 (later the same day): every candidate and every defect is Done.** The plan
-that closed them is `docs/superpowers/plans/2026-08-24-backlog-b1-b4.md`; the work is in the
-working tree, uncommitted. Each item below keeps its original Problem / Evidence / Shape and gains
-a **Status** line saying what was built and where. Every assertion runs under
-`node --test "tests/**/*.mjs"` (48 assertions, all green).
+**Status as of 2026-08-25: every candidate and every defect of the 2026-08-24 review is Done**
+(commit `12d49b7`; the plan that closed them is `docs/superpowers/plans/2026-08-24-backlog-b1-b4.md`).
+Two items found on 2026-08-25, while the Preview URL moved to Cloudflare, are open under "Found on
+2026-08-25". Each item below keeps its original Problem / Evidence / Shape and gains a **Status**
+line saying what was built and where. Every assertion runs under `node --test "tests/**/*.mjs"`
+(48 assertions, all green).
 
 Evidence was gathered by mutating a scratch copy of `index.html` 16 ways against the Performance
 Contract, probing `server.py` live on a spare port, rebuilding `images/` from the masters in a
@@ -233,6 +234,44 @@ Small, independent, and not architecture. Each was absorbed by the candidate nam
 | D8 | Assertion names over-promise: "match the real pixels" (`:44`) never opens a file; "contrast" (`:79`) greps a hex literal; "self-hosted" (`:73`) bans one hostname; `CLAUDE.md:91` "the contract enforces it" is false for any `.hero-image` rule after the first | `tests/performance-contract.mjs` | B1 | Done — each name now describes what is checked |
 | D9 | `llms.txt` description drifted from `<meta name="description">`; `llms.txt` lists only Home, not `#shop` / `#story`; no assertion behind `CLAUDE.md:123` / `:125` | `llms.txt:3`, `index.html:8–9` | B1 | Done — `llms.txt` fixed; both guidelines asserted |
 | D10 | Masters `notebook.jpg`, `mug.jpg`, `coffee.jpg` are unreferenced, so deleting one goes unnoticed until the generator runs | `tests/performance-contract.mjs:65` | B2 | Done — every Master's existence and width asserted |
+
+## Found on 2026-08-25
+
+While the Preview URL moved from ngrok to a Cloudflare quick tunnel. Recorded, not acted on; the
+evidence is two Runs through the same tunnel and a few `curl` probes of it.
+
+| # | Item | Dependency category | Status |
+|---|---|---|---|
+| B5 | The Run warms the Preview URL before measuring | local-substitutable | Open |
+| D11 | `favicon.ico` leaves the Measurement Server uncompressed | in-process | Open |
+
+### B5 · The Run warms the Preview URL before measuring
+
+**Problem.** Lighthouse's simulated throttling takes the server's response time from the one
+navigation it observes, and the first request through a fresh quick tunnel is a cold start. A Run
+taken cold measures the tunnel waking up and records it as the page's LCP.
+
+**Evidence.** Five `curl`s of the document in a row: 1.37 s to first byte, then 0.23, 0.17, 0.21,
+0.17 s. The Run of 2026-08-24T20:19:31Z (cold): TTFB 976 ms, server-response-time 779 ms, Hero load
+duration 332 ms, LCP 1151 ms. The Run of 2026-08-25T12:41:32Z through the same tunnel (warm): TTFB
+174 ms, server-response-time 95 ms, Hero load duration 88 ms, LCP 946 ms — the same page, 205 ms
+apart.
+
+**Shape.** `performRun` takes a `warm` adapter beside `measure` (default: one GET of the Preview
+URL, awaited before `measure` runs); `tests/run.mjs` asserts with a counting fake that the Run warms
+before it measures and does not warm when it refuses. Until then: one browser visit or `curl` of the
+Preview URL before `node tools/run.mjs`.
+
+### D11 · `favicon.ico` leaves the Measurement Server uncompressed
+
+**Problem.** `server.py`'s `POLICY` row for `.ico` says no gzip, on the rule of thumb that images
+do not compress — but ICO is uncompressed bitmap data: 4286 B raw, 1426 B gzipped. Cloudflare's
+edge already gzips it (the Cloudflare Runs record 1.5 KB for the favicon, the ngrok Runs 4.3 KB),
+so a Run through Cloudflare cannot show the difference; a Run through ngrok, or the local probe in
+`tests/measurement-server.mjs`, can.
+
+**Shape.** Flip the row to gzip and assert `GET /favicon.ico` arrives `Content-Encoding: gzip` under
+1.5 KB. It is fetched after load, so no metric moves: bytes, not a Win, unless a Run says otherwise.
 
 ## Set aside
 

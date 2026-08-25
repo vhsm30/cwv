@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Core Web Vitals lab disguised as a storefront. `index.html` renders "Field Notes Supply" — a
 dependency-free, client-only Storefront with no checkout — but the point of the repo is the
-measure → optimize → lock-in loop around it: serve the page locally, expose it over ngrok, perform a
-Run against the Preview URL, and encode each Win as an assertion so it cannot silently regress.
+measure → optimize → lock-in loop around it: serve the page locally, expose it through a Cloudflare
+quick tunnel, perform a Run against the Preview URL, and encode each Win as an assertion so it
+cannot silently regress.
 
 No package manager, no build step, no framework. Everything shipped is hand-written and hand-minified.
 
@@ -19,12 +20,13 @@ says to avoid.
 
 ```bash
 python server.py 8000                              # the Measurement Server at http://localhost:8000/ (0 = ephemeral port)
-./start-ngrok.ps1 -Domain <ngrok-domain>           # PowerShell: starts server.py + ngrok (omit -Domain for a temp URL)
-node tools/run.mjs https://<domain>.ngrok-free.dev/   # perform a Run, save the Report, print the summary
+./start-cloudflare.ps1                             # PowerShell: starts server.py + a Cloudflare quick tunnel (the Preview URL)
+./start-ngrok.ps1 -Domain <ngrok-domain>           # PowerShell: the ngrok alternative (omit -Domain for a temp URL)
+node tools/run.mjs https://<name>.trycloudflare.com/   # perform a Run, save the Report, print the summary
 node --test "tests/**/*.mjs"                       # every assertion: Performance Contract, Measurement Server, Run
 node --test tests/performance-contract.mjs         # the Performance Contract alone (page + images)
 node --test tests/measurement-server.mjs           # the Measurement Server alone (spawns python server.py 0)
-node --test tests/run.mjs                          # the Run alone (recorded Reports, no ngrok or Chrome)
+node --test tests/run.mjs                          # the Run alone (recorded Reports, no tunnel or Chrome)
 node --test --test-name-pattern="lazy" tests/performance-contract.mjs   # one assertion
 node tools/mutate-contract.mjs                     # prove the contract can still fail (16 mutations of index.html)
 python tools/build-images.py                       # rebuild every Rung from the Masters per images/slots.json
@@ -36,18 +38,32 @@ test directory.
 
 ### Measuring
 
-Free-tier ngrok serves an interstitial to browser user-agents, so a naive Lighthouse run measures
-ngrok's error page and reports plausible-looking garbage. `node tools/run.mjs <preview-url>` is the
-Run: it passes the bypass header, refuses a Report that is not a real Run (interstitial requests,
-wrong host, localhost, desktop form factor, redirects), names the Report by its own UTC `fetchTime`,
-writes it under `reports/`, and prints the summary. The known artifacts live in `lib/report.mjs`, not
-in anyone's head:
+The Preview URL is a Cloudflare quick tunnel: `./start-cloudflare.ps1` (by hand: `python server.py
+8000` plus `cloudflared tunnel --url http://localhost:8000`) prints a
+`https://<four-words>.trycloudflare.com` address that changes every session. Cloudflare's edge
+interposes almost nothing — no interstitial, no bypass header, `Cache-Control`/`Vary`/gzip pass
+through unchanged, and every response, Immutable Assets included, is `CF-Cache-Status: DYNAMIC`, so
+a Run never measures an edge cache. It adds two things: gzip on `favicon.ico` (the Measurement
+Server sends it uncompressed, 4286 B; the edge delivers 1426 B) and a cold start — the first request
+through a fresh tunnel takes ~1.4 s to first byte, ~0.2 s after that. Warm the Preview URL with one
+request (a browser visit or `curl`) before a Run: the Run of 2026-08-24T20:19:31Z measured a cold
+tunnel (TTFB 976 ms, LCP 1151 ms); the next one through the same tunnel, warm, read TTFB 174 ms and
+LCP 946 ms.
 
-- The bypass header does **not** reach Lighthouse's separate robots.txt fetch, so `robots-txt`
-  scores 0 over the tunnel and SEO reads 92. The summary names it and prints SEO without it (100).
-  `robots.txt` itself is valid — the Performance Contract asserts it.
+`node tools/run.mjs <preview-url>` is the Run: it refuses a Report that is not a real Run
+(interstitial requests, wrong host, localhost, desktop form factor, redirects), names the Report by
+its own UTC `fetchTime`, writes it under `reports/`, and prints the summary. The known artifacts
+live in `lib/report.mjs`, not in anyone's head:
+
 - A trailing `EPERM ... chrome-launcher` exit on Windows happens after the Report is written; the Run
   keeps the Report and ignores the exit code.
+- ngrok only (`./start-ngrok.ps1`): free-tier ngrok serves an interstitial to browser user-agents,
+  so a naive Lighthouse run measures ngrok's error page and reports plausible-looking garbage. The
+  Run always sends the `ngrok-skip-browser-warning` bypass header (other tunnels ignore it) and
+  refuses a Report with `cdn.ngrok.com` requests. The header does **not** reach Lighthouse's
+  separate robots.txt fetch, so `robots-txt` scores 0 over ngrok and SEO reads 92; the summary names
+  the artifact and prints SEO without it (100). `robots.txt` itself is valid — the Performance
+  Contract asserts it.
 
 Reports captured through the chrome-devtools MCP (`channel: devtools`, the first nine) carry an extra
 `agentic-browsing` category; newer ones are `channel: cli`. Throttling is identical (mobile, simulated,
@@ -126,10 +142,15 @@ are `categories.*.score` and `audits[...]` — `network-requests`, `lcp-breakdow
 `render-blocking-insight`, `network-dependency-tree-insight`, `image-delivery-insight`,
 `layout-shifts`, `cls-culprits-insight`.
 
-Current state (last Run, 2026-08-21T17:26:57Z, before the Measurement Server and Hero-rung changes
-of 2026-08-24): performance 100 / accessibility 100 / best-practices 100 / SEO 92 (100 net of the
-robots-txt artifact), FCP 894 ms, LCP 936 ms, TBT 0, CLS 0, 7 requests, 35.9 KB transferred. The
-next Run should hold or improve on it: WebP now arrives as `image/webp` and the script gzipped.
+Current state (Run of 2026-08-25T12:41:32Z through a warm Cloudflare quick tunnel): performance 100
+/ accessibility 100 / best-practices 100 / SEO 100, FCP = LCP = 946 ms, TBT 0, CLS 0, 7 requests,
+32.3 KB transferred; WebP arrives as `image/webp`, the script gzipped, no robots-txt artifact. Of
+the 946 ms, 174 ms is time to first byte, then 10 ms load delay, 88 ms load duration and 48 ms
+render delay (`lcp-breakdown-insight`). The last ngrok Run (2026-08-21T17:26:57Z) read TTFB 105 ms
+and FCP 894 / LCP 936 ms — the same page share; the bytes differ (response headers ~70 B apart per
+request, and Cloudflare gzips the favicon). Compare Runs taken through the same tunnel only, and
+read the page's own share of LCP — load delay, load duration, render delay — which is what a Win
+moves.
 
 ## Change guidelines
 
@@ -139,5 +160,5 @@ next Run should hold or improve on it: WebP now arrives as `image/webp` and the 
 - Keep `index.html`, `llms.txt`, and `robots.txt` consistent whenever the title, description, routes,
   or visible content change — the contract asserts the title, description, and in-page routes.
 - Preserve the `google-site-verification` meta tag unless asked to replace or remove it (asserted).
-- Do not touch `start-ngrok.ps1` for page or content changes — only when the preview workflow itself
-  needs to change.
+- Do not touch `start-cloudflare.ps1` or `start-ngrok.ps1` for page or content changes — only when
+  the preview workflow itself needs to change.

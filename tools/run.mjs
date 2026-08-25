@@ -2,13 +2,14 @@
 // The Run: one Lighthouse measurement of the Preview URL at mobile form factor under simulated
 // throttling, kept only when the Report is real.
 //
-//     node tools/run.mjs https://<domain>.ngrok-free.dev/
+//     node tools/run.mjs https://<name>.trycloudflare.com/
 //
-// Free-tier ngrok answers browser user-agents with an interstitial, so the measurement carries the
-// bypass header. The Report is then checked (lib/report.mjs) before it is saved under reports/,
-// named by its own UTC fetchTime, and summarised. Two adapters satisfy `measure`: Lighthouse
-// (lighthouseMeasure) and a recorded Report (recordedMeasure), which is how tests/run.mjs asserts
-// everything after the measurement without ngrok or Chrome.
+// The measurement carries ngrok's bypass header: free-tier ngrok answers browser user-agents with
+// an interstitial unless it is present, and every other tunnel ignores it. The Report is then
+// checked (lib/report.mjs) before it is saved under reports/, named by its own UTC fetchTime, and
+// summarised. Two adapters satisfy `measure`: Lighthouse (lighthouseMeasure) and a recorded Report
+// (recordedMeasure), which is how tests/run.mjs asserts everything after the measurement without a
+// tunnel or Chrome.
 import { exec, spawn } from 'node:child_process';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

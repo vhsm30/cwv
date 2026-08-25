@@ -18,8 +18,8 @@ The JSON a Run leaves behind, named for the Preview URL and the UTC moment of ca
 _Avoid_: result, output, log, snapshot
 
 **Preview URL**:
-The public ngrok address the page is served at. The only address a Run is valid against, because
-the throttling model assumes a real network hop.
+The public address the page is exposed at for a Run, by cloudflared (the default) or by ngrok. The
+only address a Run is valid against, because the throttling model assumes a real network hop.
 _Avoid_: localhost, staging URL, tunnel, dev URL
 
 **Measurement Server**:
