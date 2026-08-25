@@ -162,3 +162,9 @@ moves.
 - Preserve the `google-site-verification` meta tag unless asked to replace or remove it (asserted).
 - Do not touch `start-cloudflare.ps1` or `start-ngrok.ps1` for page or content changes — only when
   the preview workflow itself needs to change.
+- A review or exploration that surfaces several findings records them in `BACKLOG.md` (status Open,
+  `file:line` evidence, CONTEXT.md vocabulary) and stops there; planning starts from that list when
+  an item is picked, so acting on a finding straight away pre-empts it. `/improve` is the exception:
+  config changes approved during a run are applied during the run.
+- Commits go on `main` — the history is linear and single-author, and no feature branch is wanted
+  unless asked for. Commit only when asked.

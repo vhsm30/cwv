@@ -238,12 +238,14 @@ Small, independent, and not architecture. Each was absorbed by the candidate nam
 ## Found on 2026-08-25
 
 While the Preview URL moved from ngrok to a Cloudflare quick tunnel. Recorded, not acted on; the
-evidence is two Runs through the same tunnel and a few `curl` probes of it.
+evidence is two Runs through the same tunnel and a few `curl` probes of it. D12 came later the
+same day, from the first `/improve` run.
 
 | # | Item | Dependency category | Status |
 |---|---|---|---|
 | B5 | The Run warms the Preview URL before measuring | local-substitutable | Open |
 | D11 | `favicon.ico` leaves the Measurement Server uncompressed | in-process | Open |
+| D12 | `CLAUDE.md`'s current state is prose nothing ties to the newest Report | local-substitutable | Open |
 
 ### B5 · The Run warms the Preview URL before measuring
 
@@ -272,6 +274,23 @@ so a Run through Cloudflare cannot show the difference; a Run through ngrok, or 
 
 **Shape.** Flip the row to gzip and assert `GET /favicon.ico` arrives `Content-Encoding: gzip` under
 1.5 KB. It is fetched after load, so no metric moves: bytes, not a Win, unless a Run says otherwise.
+
+### D12 · `CLAUDE.md`'s current state is prose nothing ties to the newest Report
+
+**Problem.** `CLAUDE.md:145` quotes one Run — its fetchTime, scores, metrics, request count and
+bytes — by hand. D7 closed by making that paragraph read from the newest Run, but nothing asserts
+that it still does: after the next Run someone has to remember to rewrite it, and until they do the
+file describes a superseded Run as the current state.
+
+**Evidence.** `grep -n CLAUDE tests/*.mjs lib/*.mjs tools/*` finds only the Measurement Server's
+404 allowlist (`tests/measurement-server.mjs:133`) and a docstring in `tools/build-images.py`. In
+sync today: the newest Report on disk is
+`valued-washer-york-jvc.trycloudflare.com-20260825T124132Z.json`, the Run the paragraph cites.
+
+**Shape.** An assertion in `tests/run.mjs` that reads the fetchTime `CLAUDE.md` cites, asserts it is
+the newest Report under `reports/`, and asserts the scores and metrics quoted match that Report's
+summary — or `node tools/run.mjs` prints the paragraph so it is pasted, never composed. Prose, not
+a Win.
 
 ## Set aside
 
