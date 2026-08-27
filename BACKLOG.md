@@ -292,6 +292,219 @@ the newest Report under `reports/`, and asserts the scores and metrics quoted ma
 summary — or `node tools/run.mjs` prints the paragraph so it is pasted, never composed. Prose, not
 a Win.
 
+## Found on 2026-08-27
+
+From a review of the Storefront through the Preview URL
+(`https://leads-phillips-walk-governor.trycloudflare.com/`, warm), performed with the `claude-seo`
+plugin across nine parallel reviewers. **No Run was taken** — nothing here comes from Lighthouse
+under the project's own harness, and no Report was written. The performance ceiling was confirmed
+unchanged against the Run of 2026-08-25T12:41:32Z: an independent Lighthouse measurement through
+the same tunnel read simulated LCP 953 ms against that Report's 946 ms, 7 requests and 32.3 KB
+byte-for-byte, and every insight audit that would surface headroom (render-blocking, image
+delivery, CLS culprits, preconnect, DOM size) came back empty. **No performance item is recorded
+below** — there is none to record.
+
+Recorded, not acted on. The repository was not modified apart from this file.
+
+| # | Item | Dependency category | Status |
+|---|---|---|---|
+| B6 | Decide whether the Storefront carries structured data | in-process | Open |
+| D13 | The notebook Slot's Master is a photograph of a tote bag | local-substitutable | Open |
+| D14 | The Storefront declares no canonical | in-process | Open |
+| D15 | No Open Graph or Twitter Card tags | in-process | Open |
+| D16 | The `.add` tap target renders 80x17 px | in-process | Open |
+| D17 | The nav vanishes at 700px with no replacement | in-process | Open |
+| D18 | `#story` is nested inside the `#shop` section | in-process | Open |
+| D19 | `.product-type` clears AA by 0.07 and nothing asserts it | in-process | Open |
+| D20 | The mug and coffee Slots ship a single Rung | local-substitutable | Open |
+| D21 | The Hero preload declares `type="image/webp"` over a `.jpg` href | in-process | Open |
+
+### B6 · Decide whether the Storefront carries structured data
+
+**Problem.** The Storefront ships no structured data at all — no JSON-LD, no microdata, no RDFa.
+The ordinary way to add it is an inline `<script type="application/ld+json">`, and the Performance
+Contract asserts `page.scripts.length === 1`, counting every `<script>` span regardless of `type`.
+So structured data is not a markup edit here; it is a deliberate change to an assertion, which is
+the one thing CLAUDE.md says to do on purpose rather than in passing. Nobody has decided.
+
+Underneath the mechanics sits a content question the mechanics hide: `Product` + `Offer` with
+`price` and `availability` asserts that the three Products can be bought. Nothing here is
+purchasable — `llms.txt` says so in its own words, and the Bag is a browser-held count. Emitting an
+Offer would make the Storefront's most machine-readable surface contradict its own prose. Without
+an Offer, `review`, or `aggregateRating`, a `Product` node is not eligible for any rich result, so
+the honest version buys no SERP benefit either.
+
+**Evidence.** `tests/performance-contract.mjs:128` (`assert.equal(page.scripts.length, 1)`);
+`lib/page.mjs:136` (`spans('script')` — every script tag, `type` ignored). `index.html:92` is the
+one script, external and deferred. `llms.txt:6` — "Nothing is purchasable: the bag is held in the
+browser and there is no checkout or payment." Three reviewers reached the one-script conflict
+independently.
+
+**Shape.** Three positions, and the decision is which one is wanted, not how to build it:
+(a) stay bare — the current state, defensible and free; (b) `Organization` + `WebSite` +
+`CollectionPage` + `ItemList`/`Product` **without** `offers` — honest, not rich-result eligible,
+costs one deliberate widening of the script assertion to permit exactly one inline `ld+json` span
+beside the one external Generation; (c) a full `Offer` — only ever with a real checkout behind it,
+which this Storefront does not have and is not meant to have. D15 is the part of this that needs no
+contract change at all and can move on its own.
+
+### D13 · The notebook Slot's Master is a photograph of a tote bag
+
+**Problem.** The Product named "Linen notebook" renders a photograph of a tan kraft-paper tote bag.
+The `alt` text is not the defect — it accurately describes the photograph. The wrong Master is
+assigned to the Slot, so the Product's name and its image disagree on the page itself.
+
+**Evidence.** `images/notebook.jpg` (the Master) and every Rung derived from it were opened and
+viewed: a tan kraft-paper tote bag with woven handles on a pale ground. `index.html:49` —
+`alt="A tan kraft paper tote bag with woven handles, laid flat on a pale grey background"` against
+`index.html:53`'s `<h3 class="product-name">Linen notebook</h3>`. `images/slots.json:9-14` names
+the Master. Two reviewers reached this independently; one of them first reported it as wrong `alt`
+text, which the photographs disprove.
+
+The Hero is the same shape of question and is left as a judgement call: `index.html:36` reads
+`alt="A charcoal floor lamp angled against a sage green wall"`, and `images/hero.jpg` is indeed a
+floor lamp — a fourth category the Collection does not carry. As an ambient Hero that may be
+intended; as the LCP element it is the first thing a reader sees.
+
+**Shape.** Source a notebook Master, drop it in per `images/slots.json`, rebuild every Rung with
+`tools/build-images.py`, and bring the `alt` text with it. Content, not a Win — no metric moves.
+Nothing in the Performance Contract compares a Slot's subject to its Product's name, and nothing
+reasonably could.
+
+### D14 · The Storefront declares no canonical
+
+**Problem.** There is no `<link rel="canonical">` anywhere in the document.
+
+**Evidence.** The served document was searched for `canonical`; nothing. `index.html:5-12` is the
+whole `<head>` before the inline `<style>`.
+
+**Shape.** `<link rel="canonical" href="./">` — relative on purpose. An absolute href would bake in
+the Preview URL, which is a different hostname every session, so it would be wrong by the next
+`./start-cloudflare.ps1`. One line, no contract conflict.
+
+### D15 · No Open Graph or Twitter Card tags
+
+**Problem.** Nothing describes the Storefront to a link preview. A reader pasting the Preview URL
+anywhere gets `<title>` and the meta description, with no image.
+
+**Evidence.** The served document was searched for `og:` and `twitter:`; nothing.
+
+**Shape.** `og:title`, `og:description`, `og:image` pointing at a Hero Rung, `twitter:card`. Pure
+`<meta>` additions — this is the one structured-description item that does **not** touch the
+one-script assertion, so it moves independently of B6. The Performance Contract already asserts the
+title and description agree with `llms.txt`; whatever is added here should be read from the same
+model rather than written twice.
+
+### D16 · The `.add` tap target renders 80x17 px
+
+**Problem.** The "Add to bag" control under each Product renders 80x17 CSS px — under the 24x24
+floor WCAG 2.5.8 AA sets, and far under the 44-48 px a thumb wants. It is the Storefront's only
+per-Product control.
+
+**Evidence.** `.add{...font:700 .68rem Arial,sans-serif;...padding:0 0 .25rem;...}` in the inline
+stylesheet — zero horizontal padding, a quarter-rem below the text and nothing else. Measured
+rendered box 80x17 px at 1920, 1366, 768 and 375 px wide. `index.html:55`, `:67`, `:79`. The
+accessibility score of 100 in the Run of 2026-08-25T12:41:32Z does not contradict this: Lighthouse
+does not audit target size.
+
+**Shape.** Give `.add` symmetric padding, or a `min-height`. It changes a box inside a Product, so
+screenshot the Collection at both widths afterwards.
+
+### D17 · The nav vanishes at 700px with no replacement
+
+**Problem.** `nav{display:none}` inside `@media(max-width:700px)` removes both "Shop" and "Our
+approach" on a narrow viewport, and nothing takes their place — there is no disclosure control in
+the markup and none in `app.v1.min.js`. The Hero's invitation scrolls to `#shop`, so `#story` has
+no in-page route at all below 700px.
+
+**Evidence.** `index.html:20` is the nav; the rule sits in the `@media(max-width:700px)` block of
+the inline stylesheet. `app.v1.min.js` holds only the Bag counter. Confirmed rendered at 375 px:
+both anchors unreachable.
+
+**Shape.** Either a small hand-written disclosure, or accept it and say so — the Collection is one
+scroll away, so this may be a deliberate reading of a one-page Storefront. Worth deciding rather
+than leaving as an accident of a display rule.
+
+### D18 · `#story` is nested inside the `#shop` section
+
+**Problem.** The nav and `llms.txt` both present "Shop" and "Our approach" as peers. In the markup
+"Our approach" is a `<div class="note" id="story">` inside `<section class="catalog" id="shop"
+aria-labelledby="shop-title">`, so it is a subsection of "The collection" — labelled by it, and
+inside its landmark. The stated information architecture and the document structure disagree.
+
+**Evidence.** `index.html:39` opens the section, `index.html:82` opens the note, `index.html:87`
+closes the section. `llms.txt:8-9` lists the two as separate entries.
+
+**Shape.** Close the Collection's section before the note and give the note its own section with
+its own `aria-labelledby`, pointing at the `<h2>` it already has. Structure, not a Win.
+
+### D19 · `.product-type` clears AA by 0.07 and nothing asserts it
+
+**Problem.** The Product's type label computes 4.57:1 against the Storefront's ground — over the
+4.5 AA floor for normal text by 0.07. The Performance Contract computes contrast, but only for the
+Hero's small label, so this pair can drift under the floor without anything noticing.
+
+**Evidence.** Measured 4.57:1, grey-green (102,113,107) on cream (245,243,237).
+`tests/performance-contract.mjs:110-115` — "the small Hero label meets normal-text contrast against
+the Hero background", asserting `contrast(text, background) >= 4.5` for that pair alone.
+
+**Shape.** Either darken the label to hold a real margin, or widen the existing contrast assertion
+to cover every text pair the page computes — the machinery is already in `lib/page.mjs`, so this is
+a Lock-in of a Win nobody has taken yet rather than new apparatus.
+
+### D20 · The mug and coffee Slots ship a single Rung
+
+**Problem.** The notebook Slot offers two Rungs (400w, 700w); the mug and coffee Slots offer one
+each (374w). At `30vw` of the Collection's width the box is roughly 354 px, so a 374w Rung is right
+at 1x and has no headroom at 2x, where the notebook Slot stays sharp.
+
+**Evidence.** `images/slots.json:12` (`[400, 700]`) against `:19` and `:26` (`[374]`). Rendered box
+measured 362x453 at 1920 px wide.
+
+**Shape.** Add a Rung to each of the two Slots in `images/slots.json` and rebuild with
+`tools/build-images.py`; the Masters are already there. The Performance Contract reads candidates
+and pixels from the same file, so it follows without editing. Both are lazy and `fetchpriority=low`
+and neither is the LCP element, so this is bytes and sharpness, not a Win — unless a Run says
+otherwise.
+
+### D21 · The Hero preload declares `type="image/webp"` over a `.jpg` href
+
+**Problem.** The Hero preload carries `type="image/webp"` while its `href` fallback is a `.jpg`.
+`type` gates whether the preload is honoured at all, so a browser without WebP would drop the whole
+preload — including the perfectly good JPEG in the `href` — instead of falling back to it.
+
+**Evidence.** `index.html:10-12` — `<link rel="preload" as="image" type="image/webp"
+href="./images/hero-1200.jpg" imagesrcset="...webp 640w, ...webp 768w, ...webp 1200w">`.
+
+**Shape.** Drop the `type`, or point `href` at a WebP Rung. Cosmetic today — every browser that
+would reach this Storefront supports WebP, and the Run of 2026-08-25T12:41:32Z shows the preload
+resolving through `imagesrcset` as intended. Recorded because the contract asserts the preload
+matches the `<source>` the browser picks and says nothing about `type`.
+
+## Set aside on 2026-08-27
+
+Recorded so the next review does not re-raise them.
+
+- **"Free shipping on orders over $75"** (`index.html:17`): raised by two reviewers as an
+  unsupported claim, one of them at Critical. Set aside. The Storefront is fictional by design —
+  the Products, the prices and the Bag are equally unreal — so a shipping line is no more a
+  misrepresentation than a `$24` notebook nobody can buy. It would matter the moment anything here
+  became purchasable, and not before.
+- **Thin content, absent E-E-A-T, no per-Product URLs, no about/contact/policy routes**: all real
+  against a commercial storefront, all inherent to what CONTEXT.md says this is. The Measurement
+  Server's allowlist does not serve such routes and should not start.
+- **Security response headers** (no CSP, `X-Content-Type-Options`, `Referrer-Policy`,
+  `X-Frame-Options`, HSTS): the Measurement Server sends `Content-Type`, `Cache-Control`, `Vary`,
+  `Content-Encoding`, `Content-Length` and nothing else. Every header a Run reads is deliberate;
+  adding headers changes the bytes of every response and so changes what a Run measures. If they
+  are wanted they belong in one `POLICY`-shaped decision with a Run either side, not dropped in.
+- **A sitemap**: one URL, already reachable at the root of an `Allow: /` Storefront, and any
+  spec-valid `<loc>` is absolute and therefore stale the next session. The absent `Sitemap:`
+  directive in `robots.txt` is correct for the same reason.
+- **IndexNow, hreflang, backlinks, local and Maps signals, marketplace intelligence**: all
+  structurally inapplicable to a fictional, non-purchasable Storefront on a hostname that changes
+  every session.
+
 ## Set aside
 
 Recorded so the next review does not re-raise them.
