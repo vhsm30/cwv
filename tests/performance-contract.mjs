@@ -9,6 +9,7 @@ import test from 'node:test';
 
 import { imageSizeOf } from '../lib/image-size.mjs';
 import { contrast, loadPage, parseSrcset } from '../lib/page.mjs';
+import { loadServiceWorker, scriptGeneration } from '../lib/service-worker.mjs';
 
 const page = await loadPage(new URL('../index.html', import.meta.url));
 const { styles } = page;
@@ -212,6 +213,199 @@ test('images/ holds nothing but Masters and Rungs', async () => {
     ...slot.widths.flatMap((width) => [`${name}-${width}.webp`, `${name}-${width}.jpg`]),
   ]).sort();
   assert.deepEqual(files, expected);
+});
+
+// The manifest the page links: the one home of every icon fact, shared with tools/build-icons.py
+// and the browser. Read through the page model so a page that stops linking it fails here.
+const manifest = page.manifest ? JSON.parse(await readFile(fileOf(page.manifest), 'utf8')) : {};
+const pictured = [...(manifest.icons ?? []), ...(manifest.screenshots ?? [])];
+const sizesDeclared = (entry) => {
+  const match = /^(\d+)x(\d+)$/.exec(entry.sizes ?? '');
+  assert.ok(match, `${entry.src} declares exactly one WxH in sizes`);
+  return { width: Number(match[1]), height: Number(match[2]) };
+};
+
+test('the page links one manifest, and the manifest describes the page it sits beside', () => {
+  assert.ok(page.manifest, 'the page links a manifest');
+  assert.match(page.manifest, /\.webmanifest$/);
+  const name = page.title.split('|')[0].trim();
+  assert.equal(manifest.name, name);
+  assert.ok(manifest.short_name.length <= 12 && name.startsWith(manifest.short_name), 'short_name is the name, shortened to fit under an icon');
+  assert.equal(manifest.description, page.meta('description'));
+  assert.equal(manifest.lang, page.elements('html')[0].attrs.lang);
+  // One identity, one scope, opened as its own window: what makes the Storefront installable.
+  assert.equal(manifest.id, '/');
+  assert.equal(manifest.start_url, './');
+  assert.equal(manifest.scope, './');
+  assert.equal(manifest.display, 'standalone');
+});
+
+test("the manifest's colours are the page's own ink and paper, and the theme-color meta agrees", () => {
+  const body = styles.cascade('body');
+  assert.equal(manifest.background_color, styles.resolve(body.background), 'background_color paints the splash screen the colour of the page');
+  assert.equal(manifest.theme_color, styles.resolve(body.color), 'theme_color is the ink');
+  assert.equal(page.meta('theme-color'), manifest.theme_color);
+});
+
+test('the shortcuts are exactly the in-page routes', () => {
+  const routes = [...new Set(page.hrefs.filter((href) => href.startsWith('#')))].map((route) => `./${route}`).sort();
+  assert.ok(routes.length > 0);
+  assert.deepEqual(manifest.shortcuts.map((shortcut) => shortcut.url).sort(), routes);
+  for (const shortcut of manifest.shortcuts) assert.ok((shortcut.name ?? '').trim(), `${shortcut.url} is named`);
+});
+
+test('no word CONTEXT.md avoids reaches a visitor through the manifest', async () => {
+  const context = await readFile(fileOf('./CONTEXT.md'), 'utf8');
+  const avoided = [...context.matchAll(/^_Avoid_:\s*(.+)$/gm)]
+    .flatMap((m) => m[1].split(','))
+    .map((word) => word.replace(/\(.*?\)/g, '').trim().toLowerCase())
+    .filter(Boolean);
+  assert.ok(avoided.length >= 20, 'the avoid-lists were read');
+  const visible = [
+    manifest.name, manifest.short_name, manifest.description,
+    ...manifest.shortcuts.flatMap((shortcut) => [shortcut.name, shortcut.description]),
+    ...manifest.screenshots.map((shot) => shot.label),
+  ].filter(Boolean);
+  assert.ok(visible.length >= 5);
+  for (const text of visible) {
+    for (const word of avoided) {
+      // Whole words only. Built without \b on purpose: in a template literal that is a backspace.
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      assert.doesNotMatch(text.toLowerCase(), new RegExp('(?:^|[^a-z])' + escaped + '(?:$|[^a-z])'), `"${text}" says "${word}"`);
+    }
+  }
+});
+
+test('the head declares the Storefront capable without the deprecated Apple tag, and one touch icon', () => {
+  assert.equal(page.meta('mobile-web-app-capable'), 'yes');
+  // Chrome reports the apple- tag as a deprecation: deprecations (w5) and inspector-issues (w1)
+  // out of 25 in best-practices, so landing in both reads 76.
+  assert.equal(page.meta('apple-mobile-web-app-capable'), undefined);
+  const links = page.elements('link');
+  const touch = links.filter((link) => link.attrs.rel === 'apple-touch-icon');
+  assert.equal(touch.length, 1, 'iOS reads its icon from the head, not the manifest');
+  const icon = (manifest.icons ?? []).find((entry) => entry.src === touch[0].attrs.href);
+  assert.ok(icon, 'the touch icon is one the manifest declares, so the manifest stays the one home');
+  assert.equal(sizesDeclared(icon).width, 180);
+  // No rel=icon link: it would change which favicon request a Run records.
+  assert.ok(!links.some((link) => /\bicon\b/.test(link.attrs.rel ?? '') && link.attrs.rel !== 'apple-touch-icon'));
+});
+
+test('icons/ holds nothing but what the manifest declares, Generation-stamped', async () => {
+  assert.ok(pictured.length > 0);
+  for (const entry of pictured) {
+    // A flat, stamped PNG name under icons/: the Measurement Server serves the directory immutable.
+    assert.match(entry.src, /^\.\/icons\/[A-Za-z0-9_]+-v\d+-[A-Za-z0-9_-]+\.png$/, `${entry.src} is a stamped PNG under icons/`);
+    assert.equal(entry.type, 'image/png', entry.src);
+  }
+  const files = (await readdir(fileOf('./icons/'))).sort();
+  assert.deepEqual(files, pictured.map((entry) => entry.src.slice('./icons/'.length)).sort());
+});
+
+test('every icon and screenshot has the pixels its sizes declare', async () => {
+  for (const entry of pictured) {
+    const pixels = await pixelsOf(entry.src);
+    assert.equal(pixels.format, 'png', entry.src);
+    assert.deepEqual({ width: pixels.width, height: pixels.height }, sizesDeclared(entry), entry.src);
+  }
+});
+
+test('the icons cover what a home screen needs', () => {
+  const purposes = (icon) => (icon.purpose ?? 'any').split(/\s+/);
+  const any = manifest.icons.filter((icon) => purposes(icon).includes('any'));
+  for (const icon of manifest.icons) {
+    const { width, height } = sizesDeclared(icon);
+    assert.equal(width, height, `${icon.src} is square`);
+  }
+  assert.ok(any.some((icon) => sizesDeclared(icon).width === 192), 'a 192px icon is what makes the Storefront installable');
+  assert.ok(any.some((icon) => sizesDeclared(icon).width >= 512), 'a 512px icon is what the splash screen wants');
+  assert.ok(manifest.icons.some((icon) => purposes(icon).includes('maskable')), 'a maskable icon survives the launcher\'s mask');
+});
+
+test("the screenshots satisfy Chrome's rules for the richer install dialog", () => {
+  assert.ok(manifest.screenshots.length > 0);
+  const ratios = new Map();
+  for (const shot of manifest.screenshots) {
+    const { width, height } = sizesDeclared(shot);
+    const [short, long] = [Math.min(width, height), Math.max(width, height)];
+    assert.ok(short >= 320 && long <= 3840, `${shot.src} is within 320-3840px`);
+    assert.ok(long <= 2.3 * short, `${shot.src} is at most 2.3:1`);
+    assert.ok(['narrow', 'wide'].includes(shot.form_factor), `${shot.src} names its form factor`);
+    assert.ok((shot.label ?? '').trim(), `${shot.src} carries a label`);
+    if (ratios.has(shot.form_factor)) {
+      assert.equal(width / height, ratios.get(shot.form_factor), `${shot.form_factor} screenshots share one aspect ratio`);
+    }
+    ratios.set(shot.form_factor, width / height);
+  }
+});
+
+// The Notice: markup and CSS live in the page, inside the page model, because no Run will ever
+// see it (beforeinstallprompt never fires in Lighthouse's profile) and only the contract can hold it.
+const notice = page.elements('div').find((div) => (div.attrs.class ?? '').split(/\s+/).includes('notice'));
+const classed = (name, className) => page.elements(name).filter((el) => (el.attrs.class ?? '').split(/\s+/).includes(className));
+
+test('the Notice ships hidden, and hidden means hidden in every media context', () => {
+  assert.ok(notice, 'the Notice is in the markup');
+  assert.ok('hidden' in notice.attrs);
+  // [hidden]{display:none} is the UA's, and any author display rule beats it on origin alone, so
+  // a .notice{display:flex} would ship the Notice visible on every load. Only an !important author
+  // rule keeps the attribute meaning what it reads as.
+  for (const context of styles.contexts) {
+    const display = (styles.cascade('[hidden]', context).display ?? '').replace(/\s+/g, '');
+    assert.equal(display, 'none!important', `[hidden] in ${context ?? 'the base stylesheet'}`);
+  }
+});
+
+test('the Notice is out of flow everywhere, so revealing it shifts nothing', () => {
+  for (const context of styles.contexts) {
+    assert.equal(styles.cascade('.notice', context).position, 'fixed', `.notice in ${context ?? 'the base stylesheet'}`);
+  }
+});
+
+test('the Notice and its controls read at normal-text contrast, because no Run will ever check them', () => {
+  const ground = styles.resolve(styles.cascade('.notice').background);
+  const text = styles.resolve(styles.cascade('.notice').color);
+  assert.ok(contrast(text, ground) >= 4.5, `${text} on ${ground} is ${contrast(text, ground)}:1`);
+  for (const className of ['notice-accept', 'notice-dismiss']) {
+    assert.equal(classed('button', className).length, 1, `one .${className} button`);
+    const rule = styles.cascade(`.${className}`);
+    const background = !rule.background || rule.background === 'none' ? ground : styles.resolve(rule.background);
+    const colour = styles.resolve(rule.color);
+    assert.ok(contrast(colour, background) >= 4.5, `.${className}: ${colour} on ${background} is ${contrast(colour, background)}:1`);
+  }
+});
+
+// The Worker, read through its own model. It is registered from the one script, after load, so a
+// Run fetches it but is never served by it: storage is cleared before every Run.
+const worker = await loadServiceWorker(fileOf('./sw.js')).catch(() => null);
+
+test('the Worker keeps exactly the Shell: the document, the behaviour, and the favicon', async () => {
+  assert.ok(worker, 'sw.js sits beside the page');
+  const [script] = page.scripts;
+  // Not one Rung: three of the Rungs the page offers are never fetched at the Run's viewport, and
+  // keeping every one would add three requests to a first visit. Images are kept as they are seen.
+  assert.deepEqual([...worker.shell].sort(), ['./', script.attrs.src, './favicon.ico'].sort());
+  for (const entry of worker.shell) await stat(fileOf(entry === './' ? './index.html' : entry));
+  const behaviour = await readFile(fileOf(script.attrs.src), 'utf8');
+  assert.ok(behaviour.includes("register('./sw.js')"), 'the behaviour registers the Worker by its fixed URL');
+});
+
+test('the cache is named for the Generation of the behaviour it keeps', () => {
+  assert.ok(worker);
+  const script = worker.shell.find((entry) => scriptGeneration(entry) !== null);
+  assert.ok(script, 'the Shell names a Generation-stamped script');
+  assert.equal(worker.generation, scriptGeneration(script), `${worker.cacheName} tracks ${script}`);
+});
+
+test('the Worker never takes a page mid-Run', () => {
+  assert.ok(worker);
+  // Storage is cleared before every Run, so the Worker installs fresh each time. clients.claim()
+  // would take the page then, fire controllerchange, and a reload listener would reload the page
+  // inside the trace: every Run, not a flake. skipWaiting() belongs only to the message handler,
+  // where the Notice asks for it on the visitor's behalf.
+  assert.equal(worker.claimsClients, false, 'no clients.claim()');
+  assert.equal(worker.skipsWaitingAtInstall, false, 'no skipWaiting() outside the message handler');
+  for (const event of ['install', 'activate', 'fetch', 'message']) assert.ok(worker.handlers.includes(event), `handles ${event}`);
 });
 
 test('picture dissolves without promoting <source> to a layout item', () => {

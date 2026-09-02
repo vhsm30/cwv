@@ -114,6 +114,24 @@ test('a Report with a runtime error or a non-200 document is refused', () => {
   assert.ok(checkReport(gone, PREVIEW_URL).some((r) => r.includes('404')));
 });
 
+test('a Report whose storage was kept, or whose Worker or caches survived, is refused', () => {
+  // With storage kept, the Worker serves the document from caches: TTFB near zero, LCP collapses,
+  // and nothing else in the Report could tell. Every real Run clears both before it navigates.
+  const kept = structuredClone(reference.report);
+  kept.configSettings.disableStorageReset = true;
+  const reasons = checkReport(kept, PREVIEW_URL);
+  assert.ok(reasons.some((r) => /storage/i.test(r) && /Worker/.test(r)), reasons.join('\n'));
+  for (const type of ['service_workers', 'cache_storage']) {
+    const survived = structuredClone(reference.report);
+    survived.configSettings.clearStorageTypes = survived.configSettings.clearStorageTypes.filter((t) => t !== type);
+    assert.ok(checkReport(survived, PREVIEW_URL).some((r) => r.includes(type)), `${type} must be cleared`);
+  }
+  const unset = structuredClone(reference.report);
+  delete unset.configSettings.disableStorageReset;
+  delete unset.configSettings.clearStorageTypes;
+  assert.ok(checkReport(unset, PREVIEW_URL).length >= 2, 'unset settings are not trusted either');
+});
+
 test('the summary reads scores, metrics, requests, bytes, and the known artifacts of a Report', () => {
   const summary = summarize(reference.report);
   assert.equal(summary.url, PREVIEW_URL);

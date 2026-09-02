@@ -4,6 +4,6 @@
 
 ## Pages
 
-- [Home](./): A single-page storefront with a collection of paper goods, kitchenware, and pantry items. Nothing is purchasable: the bag is held in the browser and there is no checkout or payment.
+- [Home](./): A single-page storefront with a collection of paper goods, kitchenware, and pantry items. Nothing is purchasable: the bag is held in the browser and there is no checkout or payment. Once visited, the page can be added to a home screen and renders without a network.
 - [Shop](./#shop): The collection of three products, each with a name, a type, and a price.
 - [Our approach](./#story): A short note on choosing fewer, better objects.

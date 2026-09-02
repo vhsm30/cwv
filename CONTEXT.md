@@ -90,3 +90,21 @@ _Avoid_: size, variant, resolution, breakpoint image
 The largest honest source held for a Slot, from which every Rung is derived and which the
 Storefront never requests.
 _Avoid_: original, source image, raw
+
+### Working offline
+
+**Worker**:
+The script that stands between the Storefront and the network once a visitor has been here: it
+answers from what it has kept and asks the network for the rest. A Run clears storage first, so
+the Worker installs fresh on every Run and never serves one.
+_Avoid_: service worker (in prose), sw, cache layer
+
+**Shell**:
+The set of URLs the Storefront needs to render with the network gone: the document, the
+behaviour, and the favicon. Images are not in it; the Worker keeps each one as the visitor sees it.
+_Avoid_: precache, app shell, bundle
+
+**Notice**:
+The one element that offers to add the Storefront to the home screen, and later offers the newer
+Generation. Hidden until the browser says it may be shown, so no Run ever sees it.
+_Avoid_: banner, prompt, toast, modal

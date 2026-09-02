@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Field Notes Supply",
+  "short_name": "Field Notes",
+  "description": "Field-tested objects for a slower, more considered everyday.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f3ed",
+  "theme_color": "#17211d",
+  "icons": [
+    { "src": "./icons/icon-v1-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "./icons/icon-v1-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icons/icon-v1-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./icons/icon-v1-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "./icons/screenshot-v1-narrow.png", "sizes": "540x1080", "type": "image/png", "form_factor": "narrow", "label": "Field Notes Supply on a phone" },
+    { "src": "./icons/screenshot-v1-wide.png", "sizes": "1280x800", "type": "image/png", "form_factor": "wide", "label": "Field Notes Supply on a desktop" }
+  ],
+  "shortcuts": [
+    { "name": "The collection", "url": "./#shop" },
+    { "name": "Our approach", "url": "./#story" }
+  ]
+}

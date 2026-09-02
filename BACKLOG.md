@@ -481,6 +481,171 @@ would reach this Storefront supports WebP, and the Run of 2026-08-25T12:41:32Z s
 resolving through `imagesrcset` as intended. Recorded because the contract asserts the preload
 matches the `<source>` the browser picks and says nothing about `type`.
 
+## Found on 2026-09-02
+
+From planning the PWA. The design was stress-tested against the repository before any code was
+written, and three of the findings are defects that exist today, independently of whether the PWA
+ships. **No Run was taken** — nothing here comes from Lighthouse, and no Report was written. Two
+CLAUDE.md paragraphs were reinforced in the same pass (the UA-versus-author cascade trap beside the
+`height`/`aspect-ratio` one, and applying the mutation test at design time); apart from those and
+this file, the repository was not modified.
+
+Worth recording alongside them: Lighthouse 13.4.1 has no PWA category — it was removed in v12, the
+Run requests `performance,accessibility,best-practices,seo` (`tools/run.mjs:24`), and no recorded
+Report contains an `installable-manifest`, `themed-omnibox` or `apple-touch-icon` audit. By
+CONTEXT.md:30-33 a PWA therefore cannot be a Win here, only a non-regression.
+
+| # | Item | Dependency category | Status |
+|---|---|---|---|
+| D22 | The keep-alive assertion stays green against a 404 | in-process | **Done** |
+| D23 | The Measurement Server sends no validators, so `no-cache` costs a full download | in-process | Open |
+| D24 | CONTEXT.md and CLAUDE.md disagree on whether a superseded Generation is kept | local-substitutable | Open |
+
+### D22 · The keep-alive assertion stays green against a 404
+
+**Status. Done** with the PWA of 2026-09-02: the keep-alive loop asserts 200, and
+`tests/measurement-server.mjs` names the behaviour once, from the page model (`page.scripts[0]`),
+so a Generation bump moves every assertion at once; `/app.v1.min.js` is asserted 404.
+
+**Problem.** The assertion that one connection carries the page and its assets never checks that
+either request succeeded. A 404 is HTTP/1.1, keeps the connection open, and reuses the socket, so
+the assertion passes unchanged if the asset it names stops being served — which is exactly what
+happens the next time the behaviour's Generation is bumped.
+
+**Evidence.** `tests/measurement-server.mjs:156-164` requests `/` and `/app.v1.min.js` and asserts
+`httpVersion`, `connection` and `reusedSocket`. No status assertion. The two assertions that would
+catch the break name `/app.v1.min.js` by hand at `:82` and `:87`, so the file's name lives in three
+places and only two of them fail when it moves.
+
+**Shape.** `assert.equal(res.status, 200)` inside the existing loop at `:159`. One line.
+
+### D23 · The Measurement Server sends no validators, so `no-cache` costs a full download
+
+**Problem.** `no-cache` means revalidate, not "do not store" — but revalidation needs an `ETag` or
+`Last-Modified` to revalidate against. The Measurement Server sends neither, so every conditional
+request for the document or a crawler file returns 200 with the whole body instead of a 304. The
+document is 3,024 B on the wire today, and any client that revalidates pays all of it every time.
+
+**Evidence.** `server.py:94-106` — `reply()` sends `Content-Type`, `Cache-Control`, optional `Vary`
+and `Content-Encoding`, and `Content-Length`. No validator header, and no `If-None-Match` /
+`If-Modified-Since` handling in `respond()` at `:80-92`.
+
+**Shape.** An `ETag` from a hash of the bytes, and a 304 branch when the request carries a matching
+`If-None-Match`. Costs nothing on a first view, so it does not move the current Run — it changes
+what a repeat view costs, which nothing in the repository measures yet.
+
+### D24 · CONTEXT.md and CLAUDE.md disagree on whether a superseded Generation is kept
+
+**Status. Open.** The PWA of 2026-09-02 bumped the behaviour to `app.v2.min.js` and followed
+CONTEXT.md's rule — a stated rule outranks a record of one occasion: `app.v1.min.js` is kept on
+disk, out of the Measurement Server's allowlist, and asserted 404, so "kept" does not mean "still
+served". CLAUDE.md now points here from beside its record of the deletion instead of resolving the
+contradiction; deciding which document cites which is still open.
+
+**Problem.** The rule and the record contradict each other, and the next Generation bump has to pick
+one without guidance.
+
+**Evidence.** CONTEXT.md:44-47 defines a Generation as assets shipped under new filenames "so one
+experiment's results can never be mistaken for another's" and states that "superseded Generations
+are kept, not deleted". CLAUDE.md:57-59 records the opposite happening: the superseded stylesheet
+Generations and `app.min.js` "were deleted once the CSS moved inline; recover them from the initial
+commit if a Generation needs to be revisited."
+
+**Shape.** Decide which is the rule and make the other cite it. If Generations are kept, a
+superseded one should also leave the Measurement Server's allowlist and be asserted 404 — otherwise
+"kept" quietly means "still served", which is a third behaviour neither document describes.
+
+## The PWA · 2026-09-02
+
+Built from the plan at `docs/superpowers/plans/2026-09-02-pwa.md`: a Worker, a Shell, a manifest
+with placeholder icons, and a Notice, each locked into the Performance Contract and the Measurement
+Server's assertions. CONTEXT.md gained the three words under "Working offline".
+
+**This is a non-regression, not a Win.** Lighthouse 13.4.1 has no PWA category — it was removed in
+v12 — and the Run requests only `performance,accessibility,best-practices,seo` (`tools/run.mjs:24`),
+so no Run can show a Worker, a manifest, or a Notice moving a metric; by CONTEXT.md:30-33 that is
+not a Win. The Performance Contract, not the Report, is what holds this work in place, and what the
+Run after it has to show is that nothing moved.
+
+**Before** — the Run of 2026-08-25T12:41:32Z through a warm Cloudflare quick tunnel: performance
+100 / accessibility 100 / best-practices 100 / SEO 100; FCP = LCP = 946 ms, TBT 0, CLS 0; 7
+requests, 32.3 KB transferred (`/` 3,024 · `hero-768.webp` 6,746 · `app.v1.min.js` 302 ·
+`notebook-400.webp` 5,982 · `mug-374.webp` 1,992 · `coffee-374.webp` 13,492 · `favicon.ico` 1,488).
+`hero-640.webp`, `hero-1200.webp` and `notebook-700.webp` are never fetched at the Run's viewport,
+which is why the Shell is three URLs and not every Rung: keeping every Rung would add three requests
+and 52.7 KB to that list for nothing.
+
+**After** — the Run of 2026-09-02T18:36:43Z through a warm Cloudflare quick tunnel: performance
+100 / accessibility 100 / best-practices 100 / SEO 100; FCP = LCP = 911 ms, TBT 0, CLS 0; 9
+requests, 43.7 KB transferred (`/` 3,357 · `hero-768.webp` 6,747 · `app.v2.min.js` 942 ·
+`manifest.webmanifest` 594 · `notebook-400.webp` 5,982 · `mug-374.webp` 1,992 · `coffee-374.webp`
+13,492 · `favicon.ico` 1,488 · `icon-v1-180.png` 10,118). The page's own share of LCP reads 10 ms
+load delay, 83 ms load duration and 41 ms render delay against 10 / 88 / 48 before, so nothing
+moved; the rest of the difference is time to first byte (133 ms against 174 ms), which is the
+tunnel's. `deprecations`, `inspector-issues` and `errors-in-console` are empty, and the Issues panel
+of a Chrome opened on the Preview URL was empty too. The 11.4 KB the PWA adds to a first visit is
+the manifest and the one icon Chrome fetches after reading it (10.7 KB together), plus 333 B more
+document and 640 B more script. The Run of 2026-09-02T18:24:24Z, twelve minutes earlier through
+another tunnel, read LCP 1114 ms with that same page share: its `network-server-latency` estimate
+was 267 ms against 60 ms here, so it measured the tunnel, and is kept as the record of that.
+
+| # | Item | Dependency category | Status |
+|---|---|---|---|
+| B7 | Teach the Run to measure a Worker-warm repeat visit | mock (Lighthouse CLI) | Open |
+| B8 | The Run's summary names nothing of the tunnel's share | in-process | Open |
+| B9 | The Run refuses a poisoned hostname only after a full Lighthouse pass | mock (Lighthouse CLI) | Open |
+
+### B7 · Teach the Run to measure a Worker-warm repeat visit
+
+**Problem.** A Run clears storage before it navigates, so every Run is a first visit and the Worker
+never serves one. What a returning visitor pays — the document from the Shell, every image from the
+cache — is exactly what the Worker exists to change, and nothing in the repository measures it.
+
+**Evidence.** Every recorded Report has `configSettings.disableStorageReset: false` and clears
+`service_workers` and `cache_storage`; `lib/report.mjs` refuses any Report that does not, on
+purpose, because one `--disable-storage-reset` would let the Worker serve the document from
+`caches` and record a fake first-visit result with nothing able to tell.
+
+**Shape.** A second, deliberately named measurement: warm the Preview URL in the same Chrome
+profile, then measure with storage kept, and have `checkReport` accept that Report only under a
+flag that also changes its name. Touches `tools/run.mjs`, `lib/report.mjs`, the Report naming and
+`tests/run.mjs:123`. Not a Run by CONTEXT.md's definition until CONTEXT.md says so.
+
+### B8 · The Run's summary names nothing of the tunnel's share
+
+**Problem.** Two Runs of the same page twelve minutes apart on 2026-09-02 read LCP 1114 ms and
+911 ms with the same load delay, load duration and render delay. The summary printed both as if
+they were the page's; the difference was Lantern's `network-server-latency` estimate (267 ms against
+60 ms), which nothing in the summary shows, so a tunnel-caused figure is indistinguishable from a
+regression until someone opens the Report by hand.
+
+**Evidence.** `lib/report.mjs:150-176` (`summarize` reads scores, four metrics, requests and bytes,
+nothing of latency); `lib/report.mjs:133-148` (the only known artifact is ngrok's `robots-txt`);
+`reports/strain-pound-zoloft-allowed…-20260902T182424Z.json` and
+`reports/preceding-sensitive-secondary-festivals…-20260902T183643Z.json`.
+
+**Shape.** Print `network-server-latency` and `network-rtt` beside TTFB in the summary, and name an
+out-of-band estimate as a known artifact the way the ngrok one is named, so `node tools/run.mjs
+reports/<file>.json` says "the tunnel's" without a reader having to. Recorded Reports exercise all
+of it; no tunnel or Chrome needed.
+
+### B9 · The Run refuses a poisoned hostname only after a full Lighthouse pass
+
+**Problem.** A fresh quick-tunnel hostname looked up before it propagates leaves the ISP resolver
+holding "no such name" for 30 minutes. The Run checks the URL's shape, launches Chrome, waits out
+the whole measurement, and only then refuses the Report with `CHROME_INTERSTITIAL_ERROR` — a reason
+that says nothing about DNS, while `curl` on the same machine succeeds from the Windows cache.
+
+**Evidence.** `tools/run.mjs:36` (the only check before launch is `previewUrlProblem`, a URL-shape
+test); `tools/run.mjs:39` and `lib/report.mjs:42-44` (the refusal reads `runtimeError` after the
+fact); the `measuring-runs` skill, "A fresh hostname and DNS", for the procedure done by hand on
+2026-09-02.
+
+**Shape.** A pre-flight before Lighthouse: fetch the Preview URL once from the same Chrome the Run
+will launch (headless `--dump-dom`, or one CDP navigation) and refuse to measure when the document
+that comes back is not the Storefront's, naming DNS as the likely cause. This is also where B5's
+warming request belongs, so one request does both.
+
 ## Set aside on 2026-08-27
 
 Recorded so the next review does not re-raise them.

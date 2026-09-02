@@ -5,11 +5,16 @@ around the page, so results measured under any other server will not reproduce.
 
     python server.py [port]        # default 8000; 0 binds an ephemeral port and prints the bound one
 
-Two tables decide everything the handler does. POLICY maps a file's suffix to its content type,
-whether it is gzipped, and how it is cached. PUBLIC (plus IMAGE_NAME under /images/) is the whole
-set of URLs a Run may fetch; everything else in the repository -- Reports, the Performance
-Contract, this file -- is a 404 that is never cacheable. tests/measurement-server.mjs asserts both
-tables through HTTP, the seam a Run crosses.
+Three tables decide everything the handler does. POLICY holds the facts about the bytes: a file's
+suffix maps to its content type and whether it is gzipped. PUBLIC and DIRECTORIES hold the facts
+about the URLs: PUBLIC is every single path a Run may fetch and how it is cached, DIRECTORIES the
+two folders whose flat-named files are public under one cache rule. Caching is a property of the
+URL, not of the bytes, which is why it lives with the path: an Immutable Asset's filename is its
+cache key, and sw.js is the one script in the lab whose filename is deliberately not one -- a
+Worker registration is identified by its URL, so a Generation-stamped Worker would be a second
+registration, not a replacement. Everything else in the repository -- Reports, the Performance
+Contract, this file -- is a 404 that is never cacheable. tests/measurement-server.mjs asserts all
+three tables through HTTP, the seam a Run crosses.
 """
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,50 +26,79 @@ import sys
 
 ROOT = Path(__file__).resolve().parent
 IMAGES = ROOT / "images"
+ICONS = ROOT / "icons"
 
 # An Immutable Asset's filename is its cache key, so it may be cached for a year and never
-# revalidated; the document and the crawler files must be revalidated on every request.
+# revalidated; the document, the crawler files, and anything identified by its URL alone must be
+# revalidated on every request.
 IMMUTABLE = "public, max-age=31536000, immutable"
 NO_CACHE = "no-cache"
 
-# suffix -> (Content-Type, gzip?, Cache-Control). mimetypes is deliberately not consulted:
-# Python on win32 has no entry for .webp and answered application/octet-stream for the LCP image.
+# suffix -> (Content-Type, gzip?): the facts about the bytes. mimetypes is deliberately not
+# consulted: Python on win32 has no entry for .webp and answered application/octet-stream for the
+# LCP image.
 POLICY = {
-    ".html": ("text/html; charset=utf-8", True, NO_CACHE),
-    ".txt": ("text/plain; charset=utf-8", True, NO_CACHE),
-    ".js": ("text/javascript; charset=utf-8", True, IMMUTABLE),
-    ".css": ("text/css; charset=utf-8", True, IMMUTABLE),
-    ".webp": ("image/webp", False, IMMUTABLE),
-    ".jpg": ("image/jpeg", False, IMMUTABLE),
-    ".ico": ("image/x-icon", False, IMMUTABLE),
+    ".html": ("text/html; charset=utf-8", True),
+    ".txt": ("text/plain; charset=utf-8", True),
+    ".js": ("text/javascript; charset=utf-8", True),
+    ".css": ("text/css; charset=utf-8", True),
+    ".webp": ("image/webp", False),
+    ".jpg": ("image/jpeg", False),
+    ".ico": ("image/x-icon", False),
+    ".png": ("image/png", False),
+    ".webmanifest": ("application/manifest+json", True),
 }
 
-# URL path -> file: the Storefront and what a browser fetches alongside it. Nothing else is public.
+# URL path -> (file, Cache-Control): the Storefront and what a browser fetches alongside it.
 PUBLIC = {
-    "/": ROOT / "index.html",
-    "/app.v1.min.js": ROOT / "app.v1.min.js",
-    "/favicon.ico": ROOT / "favicon.ico",
-    "/robots.txt": ROOT / "robots.txt",
-    "/llms.txt": ROOT / "llms.txt",
+    "/": (ROOT / "index.html", NO_CACHE),
+    # The behaviour's current Generation. A superseded one stays on disk (CONTEXT.md) and leaves
+    # this table, so "kept" never quietly means "still served".
+    "/app.v2.min.js": (ROOT / "app.v2.min.js", IMMUTABLE),
+    "/favicon.ico": (ROOT / "favicon.ico", IMMUTABLE),
+    "/robots.txt": (ROOT / "robots.txt", NO_CACHE),
+    "/llms.txt": (ROOT / "llms.txt", NO_CACHE),
+    # The manifest is identified by its URL, not its content, so it is revalidated like the document.
+    "/manifest.webmanifest": (ROOT / "manifest.webmanifest", NO_CACHE),
+    # The Worker: the one script whose filename is deliberately not a cache key (see the docstring).
+    "/sw.js": (ROOT / "sw.js", NO_CACHE),
 }
-# A Rung or Master under /images/: a flat name, no separators, one of the image suffixes.
-IMAGE_NAME = re.compile(r"[A-Za-z0-9_-]+\.(?:webp|jpg)")
+
+# URL directory -> (folder, suffixes, Cache-Control): a flat name (no separators) with one of the
+# suffixes is public under the folder; nothing else under the directory is, the index included.
+DIRECTORIES = {
+    "/images": (IMAGES, {".webp", ".jpg"}, IMMUTABLE),
+    "/icons": (ICONS, {".png"}, IMMUTABLE),
+}
+FLAT_NAME = re.compile(r"[A-Za-z0-9_-]+\.[a-z0-9]+")
+
+# A public path with no POLICY row is a programming error, caught here at boot: a 500 in the middle
+# of a Run would corrupt the measurement instead of failing the assertion that spawns this server.
+for _path, (_file, _cache) in PUBLIC.items():
+    if _file.suffix.lower() not in POLICY:
+        sys.exit(f"server.py: PUBLIC {_path} has no POLICY row for {_file.suffix!r}")
+for _directory, (_folder, _suffixes, _cache) in DIRECTORIES.items():
+    for _suffix in sorted(_suffixes - POLICY.keys()):
+        sys.exit(f"server.py: DIRECTORIES {_directory} has no POLICY row for {_suffix!r}")
 
 
 def public_file(url_path):
-    """The file a request path maps to, or None when the path is not public."""
+    """The (file, Cache-Control) a request path maps to, or None when the path is not public."""
     path = unquote(urlsplit(url_path).path)
     if path in PUBLIC:
-        file = PUBLIC[path]
+        file, cache = PUBLIC[path]
     else:
         directory, _, name = path.rpartition("/")
-        if directory != "/images" or not IMAGE_NAME.fullmatch(name):
+        if directory not in DIRECTORIES or not FLAT_NAME.fullmatch(name):
             return None
-        file = IMAGES / name
+        folder, suffixes, cache = DIRECTORIES[directory]
+        file = folder / name
+        if file.suffix not in suffixes:
+            return None
     resolved = file.resolve()
     if not resolved.is_relative_to(ROOT) or not resolved.is_file():
         return None
-    return resolved
+    return resolved, cache
 
 
 class MeasurementServer(BaseHTTPRequestHandler):
@@ -78,11 +112,12 @@ class MeasurementServer(BaseHTTPRequestHandler):
         self.respond(send_body=False)
 
     def respond(self, send_body):
-        file = public_file(self.path)
-        if file is None:
+        public = public_file(self.path)
+        if public is None:
             self.reply(404, b"Not Found\n", "text/plain; charset=utf-8", NO_CACHE, send_body)
             return
-        content_type, compressible, cache = POLICY[file.suffix.lower()]
+        file, cache = public
+        content_type, compressible = POLICY[file.suffix.lower()]
         body = file.read_bytes()
         encoding = None
         if compressible:

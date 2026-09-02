@@ -13,6 +13,11 @@ import { loadPage } from '../lib/page.mjs';
 const root = new URL('../', import.meta.url);
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 const gzip = { 'accept-encoding': 'gzip' };
+// The page model is the one parser of what the page references and links.
+const page = await loadPage(new URL('index.html', root));
+const pathOf = (relative) => '/' + relative.replace(/^\.\//, '');
+// The behaviour's current Generation, named by the page, so a bump moves every assertion at once.
+const behaviour = pathOf(page.scripts[0].attrs.src);
 
 // One keep-alive connection, like the browser a Run drives.
 const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
@@ -79,12 +84,33 @@ test('the Storefront document is HTML, gzipped, and never cached', async () => {
 });
 
 test('behaviour is served as JavaScript, gzipped, and as an Immutable Asset', async () => {
-  const res = await request('/app.v1.min.js', { headers: gzip });
+  assert.match(behaviour, /^\/app\.v2\.min\.js$/, 'the page ships the second Generation of the behaviour');
+  const res = await request(behaviour, { headers: gzip });
   assert.equal(res.status, 200);
   assert.match(res.headers['content-type'], /^text\/javascript/);
   assert.equal(res.headers['content-encoding'], 'gzip');
   assert.equal(res.headers['cache-control'], IMMUTABLE);
-  assert.equal(gunzipSync(res.body).toString('utf8'), (await file('app.v1.min.js')).toString('utf8'));
+  assert.equal(gunzipSync(res.body).toString('utf8'), (await file(behaviour.slice(1))).toString('utf8'));
+});
+
+test('the Worker is served as JavaScript, gzipped, and revalidated on every request', async () => {
+  // Its URL is its identity: a Generation-stamped Worker would be a second registration, not a
+  // replacement, so sw.js is the one script that must never be immutable. A wrong content type
+  // registers-and-fails silently into errors-in-console.
+  const res = await request('/sw.js', { headers: gzip });
+  assert.equal(res.status, 200);
+  assert.match(res.headers['content-type'], /^text\/javascript/);
+  assert.equal(res.headers['content-encoding'], 'gzip');
+  assert.equal(res.headers['cache-control'], 'no-cache');
+  assert.equal(gunzipSync(res.body).toString('utf8'), (await file('sw.js')).toString('utf8'));
+});
+
+test('a superseded Generation is kept on disk but leaves the Measurement Server', async () => {
+  // CONTEXT.md: Generations are kept, not deleted. Kept must not quietly mean still served.
+  await file('app.v1.min.js');
+  const res = await request('/app.v1.min.js', { headers: gzip });
+  assert.equal(res.status, 404);
+  assert.equal(res.headers['cache-control'], 'no-cache');
 });
 
 test('images carry their real type, are not gzipped, and are Immutable Assets', async () => {
@@ -108,6 +134,31 @@ test('images carry their real type, are not gzipped, and are Immutable Assets', 
   assert.equal(ico.headers['cache-control'], IMMUTABLE);
 });
 
+test('the manifest the page links is served as a manifest, gzipped, and revalidated like the document', async () => {
+  assert.ok(page.manifest, 'the page links a manifest');
+  const res = await request(pathOf(page.manifest), { headers: gzip });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['content-type'], 'application/manifest+json');
+  assert.equal(res.headers['content-encoding'], 'gzip');
+  assert.equal(res.headers['cache-control'], 'no-cache');
+  assert.equal(gunzipSync(res.body).toString('utf8'), (await file(page.manifest)).toString('utf8'));
+});
+
+test('every icon and screenshot the manifest declares is public and immutable', async () => {
+  // The OS install pipeline fetches these, not the page, so the page model cannot vouch for them.
+  const manifest = JSON.parse(await file(page.manifest ?? 'manifest.webmanifest'));
+  const entries = [...manifest.icons, ...manifest.screenshots];
+  assert.ok(entries.length > 0);
+  for (const { src } of entries) {
+    const res = await request(pathOf(src), { headers: gzip });
+    assert.equal(res.status, 200, `${src} must be served`);
+    assert.equal(res.headers['content-type'], 'image/png', src);
+    assert.equal(res.headers['content-encoding'], undefined, src);
+    assert.equal(res.headers['cache-control'], IMMUTABLE, `${src} is an Immutable Asset`);
+    assert.ok(res.body.equals(await file(src)), `${src} arrives byte for byte`);
+  }
+});
+
 test('robots.txt and llms.txt are plain text and never cached', async () => {
   for (const path of ['/robots.txt', '/llms.txt']) {
     const res = await request(path, { headers: gzip });
@@ -129,6 +180,7 @@ test('only the Storefront is public; the repository behind it is not', async () 
   assert.ok(report, 'expected at least one Report on disk to probe');
   const hidden = [
     '/images/',
+    '/icons/',
     '/server.py',
     '/CLAUDE.md',
     '/tests/performance-contract.mjs',
@@ -154,9 +206,11 @@ test('HEAD carries the same headers as GET and no body', async () => {
 });
 
 test('one keep-alive connection carries the page and its assets', async () => {
-  const page = await request('/', { headers: gzip });
-  const asset = await request('/app.v1.min.js', { headers: gzip });
-  for (const res of [page, asset]) {
+  const document = await request('/', { headers: gzip });
+  const asset = await request(behaviour, { headers: gzip });
+  for (const res of [document, asset]) {
+    // A 404 keeps the connection open too, so the status is part of what "carries" means.
+    assert.equal(res.status, 200);
     assert.equal(res.httpVersion, '1.1');
     assert.notEqual(res.headers.connection, 'close');
   }
@@ -165,11 +219,10 @@ test('one keep-alive connection carries the page and its assets', async () => {
 
 test('every asset the Storefront references is public and immutable', async () => {
   // The allowlist and the page must agree: an asset the page names but the server hides is a 404
-  // a Run would measure. The page model is the one parser of what the page references.
-  const page = await loadPage(new URL('index.html', root));
+  // a Run would measure.
   assert.ok(page.assets.length >= 12);
   for (const asset of page.assets) {
-    const res = await request('/' + asset.replace(/^\.\//, ''), { headers: gzip });
+    const res = await request(pathOf(asset), { headers: gzip });
     assert.equal(res.status, 200, `${asset} must be served`);
     assert.equal(res.headers['cache-control'], IMMUTABLE, `${asset} is an Immutable Asset`);
   }

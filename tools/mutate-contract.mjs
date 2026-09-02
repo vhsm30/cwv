@@ -1,65 +1,94 @@
 #!/usr/bin/env node
 // The Performance Contract's own check: can it still fail? Each mutation below breaks one thing an
-// assertion guards (or, for the two marked "passes", changes something harmless). The page is
-// mutated in place, the contract is run, and the page is restored — a crash mid-way is undone by
-// `git checkout index.html`. Add a row whenever you add an assertion: a new assertion that no
-// mutation can fail is documentation, not Lock-in.
+// assertion guards (or, for the rows marked "passes", changes something harmless). One of the
+// three files the contract reads — the page, the manifest, the Worker — is mutated in place, the
+// contract is run, and the file is restored; a crash mid-way is undone by `git checkout .`. Add a
+// row whenever you add an assertion: a new assertion that no mutation can fail is documentation,
+// not Lock-in — and apply the test while designing the assertion, since one that restates the
+// markup it guards cannot fail.
 //
 //     node tools/mutate-contract.mjs
 //
-// The table is the one from the architecture review of 2026-08-24 (BACKLOG.md, B1); before the
+// M1-M16 are the table from the architecture review of 2026-08-24 (BACKLOG.md, B1); before the
 // contract read the page through lib/page.mjs, M5, M6, M10, M14, M15 and M16 passed unnoticed and
-// M7 and M8 failed for no reason.
+// M7 and M8 failed for no reason. M17-M34 came with the PWA of 2026-09-02.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const pagePath = fileURLToPath(new URL('../index.html', import.meta.url));
-const original = readFileSync(pagePath, 'utf8');
+const FILES = ['index.html', 'manifest.webmanifest', 'sw.js'];
+const paths = Object.fromEntries(FILES.map((file) => [file, fileURLToPath(new URL(`../${file}`, import.meta.url))]));
+const originals = Object.fromEntries(FILES.map((file) => [file, readFileSync(paths[file], 'utf8')]));
 
-const must = (html, needle) => {
-  if (!html.includes(needle)) throw new Error(`mutation target missing from index.html: ${needle}`);
-  return html;
+const must = (text, needle, file) => {
+  if (!text.includes(needle)) throw new Error(`mutation target missing from ${file}: ${needle}`);
+  return text;
 };
-const swap = (needle, replacement) => (html) => must(html, needle).replace(needle, replacement);
-const swapAll = (needle, replacement) => (html) => must(html, needle).replaceAll(needle, replacement);
+const swap = (needle, replacement) => (text, file) => must(text, needle, file).replace(needle, replacement);
+const swapAll = (needle, replacement) => (text, file) => must(text, needle, file).replaceAll(needle, replacement);
+const page = (name, mutate, expected) => ({ name, file: 'index.html', mutate, expected });
+const manifest = (name, mutate, expected) => ({ name, file: 'manifest.webmanifest', mutate, expected });
+const worker = (name, mutate, expected) => ({ name, file: 'sw.js', mutate, expected });
 
 const mutations = [
-  ['M1 preload imagesrcset drifts from the <source>', (h) => must(h, 'imagesrcset=').replace(/\.\/images\/hero-768\.webp 768w/, './images/hero-768.webp 770w'), 'caught'],
-  ['M2 height:auto dropped from .product-image', swap('display:block;height:auto;object-fit:cover', 'display:block;object-fit:cover'), 'caught'],
-  ['M3 product height 875 -> 900', swap('width="700" height="875"', 'width="700" height="900"'), 'caught'],
-  ['M4 fetchpriority="low" removed', swapAll(' fetchpriority="low"', ''), 'caught'],
-  ['M5 .eyebrow stops using --accent', swap('.eyebrow{color:var(--accent);', '.eyebrow{color:var(--muted);'), 'caught'],
-  ['M6 hero src -> https://cdn.example.com/', (h) => must(h, 'src="./images/hero').replace(/src="\.\/images\/hero[^"]*\.jpg"/, 'src="https://cdn.example.com/hero.jpg"'), 'caught'],
-  ['M7 harmless: as= before rel= on the preload', swap('<link rel="preload" as="image"', '<link as="image" rel="preload"'), 'passes'],
-  ['M8 harmless: single-quoted fetchpriority', swapAll('fetchpriority="low"', "fetchpriority='low'"), 'passes'],
-  ['M9 hero gains loading="lazy"', swap('alt="A charcoal floor lamp', 'loading="lazy" alt="A charcoal floor lamp'), 'caught'],
-  ['M10 mobile .hero-image gains height:300px', swap('.hero-image{aspect-ratio:1/1;min-height:0}', '.hero-image{aspect-ratio:1/1;min-height:0;height:300px}'), 'caught'],
-  ['M11 <source sizes> != <img sizes>', swap('sizes="(max-width: 700px) 45vw, 30vw">', 'sizes="(max-width: 700px) 45vw, 33vw">'), 'caught'],
-  ['M12 srcset names a missing .jpg', swap('./images/hero-640.jpg 640w', './images/hero-641.jpg 640w'), 'caught'],
-  ['M13 srcset names a missing .webp', swapAll('./images/notebook-400.webp 400w', './images/notebook-401.webp 400w'), 'caught'],
-  ['M14 hero pixels differ from the markup (803 declared, file differs)', swap('height="803"', 'height="800"'), 'caught'],
-  ['M15 google-site-verification removed', (h) => must(h, 'google-site-verification').replace(/\s*<meta name="google-site-verification"[^>]*>/, ''), 'caught'],
-  ['M16 <title> changed, llms.txt untouched', swap('<title>Field Notes Supply |', '<title>Field Notes Co |'), 'caught'],
+  page('M1 preload imagesrcset drifts from the <source>', (h, f) => must(h, 'imagesrcset=', f).replace(/\.\/images\/hero-768\.webp 768w/, './images/hero-768.webp 770w'), 'caught'),
+  page('M2 height:auto dropped from .product-image', swap('display:block;height:auto;object-fit:cover', 'display:block;object-fit:cover'), 'caught'),
+  page('M3 product height 875 -> 900', swap('width="700" height="875"', 'width="700" height="900"'), 'caught'),
+  page('M4 fetchpriority="low" removed', swapAll(' fetchpriority="low"', ''), 'caught'),
+  page('M5 .eyebrow stops using --accent', swap('.eyebrow{color:var(--accent);', '.eyebrow{color:var(--muted);'), 'caught'),
+  page('M6 hero src -> https://cdn.example.com/', (h, f) => must(h, 'src="./images/hero', f).replace(/src="\.\/images\/hero[^"]*\.jpg"/, 'src="https://cdn.example.com/hero.jpg"'), 'caught'),
+  page('M7 harmless: as= before rel= on the preload', swap('<link rel="preload" as="image"', '<link as="image" rel="preload"'), 'passes'),
+  page('M8 harmless: single-quoted fetchpriority', swapAll('fetchpriority="low"', "fetchpriority='low'"), 'passes'),
+  page('M9 hero gains loading="lazy"', swap('alt="A charcoal floor lamp', 'loading="lazy" alt="A charcoal floor lamp'), 'caught'),
+  page('M10 mobile .hero-image gains height:300px', swap('.hero-image{aspect-ratio:1/1;min-height:0}', '.hero-image{aspect-ratio:1/1;min-height:0;height:300px}'), 'caught'),
+  page('M11 <source sizes> != <img sizes>', swap('sizes="(max-width: 700px) 45vw, 30vw">', 'sizes="(max-width: 700px) 45vw, 33vw">'), 'caught'),
+  page('M12 srcset names a missing .jpg', swap('./images/hero-640.jpg 640w', './images/hero-641.jpg 640w'), 'caught'),
+  page('M13 srcset names a missing .webp', swapAll('./images/notebook-400.webp 400w', './images/notebook-401.webp 400w'), 'caught'),
+  page('M14 hero pixels differ from the markup (803 declared, file differs)', swap('height="803"', 'height="800"'), 'caught'),
+  page('M15 google-site-verification removed', (h, f) => must(h, 'google-site-verification', f).replace(/\s*<meta name="google-site-verification"[^>]*>/, ''), 'caught'),
+  page('M16 <title> changed, llms.txt untouched', swap('<title>Field Notes Supply |', '<title>Field Notes Co |'), 'caught'),
+  // The PWA of 2026-09-02: the Notice, the head, the manifest, the Worker.
+  page('M17 [hidden] loses !important, so the Notice\'s own display rule reveals it', swap('[hidden]{display:none!important}', '[hidden]{display:none}'), 'caught'),
+  page('M18 the Notice ships without hidden', swap('<div class="notice" role="status" hidden>', '<div class="notice" role="status">'), 'caught'),
+  page('M19 the Notice enters the flow (position:fixed -> sticky)', swap('padding:.9rem 1.1rem;position:fixed', 'padding:.9rem 1.1rem;position:sticky'), 'caught'),
+  page('M20 the deprecated apple-mobile-web-app-capable tag is added', swap('<meta name="mobile-web-app-capable" content="yes">', '<meta name="mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-capable" content="yes">'), 'caught'),
+  page('M21 the theme-color meta drifts from the manifest', swap('<meta name="theme-color" content="#17211d">', '<meta name="theme-color" content="#000000">'), 'caught'),
+  page('M22 the manifest link is dropped', (h, f) => must(h, 'rel="manifest"', f).replace(/\s*<link rel="manifest"[^>]*>/, ''), 'caught'),
+  manifest('M23 theme_color drifts from the ink', swap('"theme_color": "#17211d"', '"theme_color": "#000000"'), 'caught'),
+  manifest('M24 a shortcut points at a route the page does not have', swap('"url": "./#story"', '"url": "./#about"'), 'caught'),
+  manifest('M25 an icon declares sizes its pixels do not have', swap('"sizes": "192x192"', '"sizes": "200x200"'), 'caught'),
+  manifest('M26 the name gains a word CONTEXT.md avoids', swap('"name": "Field Notes Supply"', '"name": "Field Notes Supply app"'), 'caught'),
+  manifest('M27 both screenshots claim one form factor with two aspect ratios', swap('"form_factor": "narrow"', '"form_factor": "wide"'), 'caught'),
+  manifest('M28 harmless: keys reordered', (text) => {
+    const { name, ...rest } = JSON.parse(text);
+    return JSON.stringify({ ...rest, name }, null, 2);
+  }, 'passes'),
+  worker('M29 the Shell drops the behaviour', swap("'./app.v2.min.js', ", ''), 'caught'),
+  worker('M30 the Shell keeps a Rung ahead of time', swap("'./favicon.ico']", "'./favicon.ico', './images/hero-1200.webp']"), 'caught'),
+  worker('M31 the cache Generation drifts from the behaviour it keeps', swap("const CACHE = 'field-notes-v2';", "const CACHE = 'field-notes-v3';"), 'caught'),
+  worker('M32 clients.claim() is added at activate', swap("self.addEventListener('activate', (event) => {", "self.addEventListener('activate', (event) => {\n  event.waitUntil(self.clients.claim());"), 'caught'),
+  worker('M33 skipWaiting() is called at install', swap("self.addEventListener('install', (event) => {", "self.addEventListener('install', (event) => {\n  self.skipWaiting();"), 'caught'),
+  worker('M34 harmless: Shell entries reordered', swap("['./', './app.v2.min.js', './favicon.ico']", "['./favicon.ico', './', './app.v2.min.js']"), 'passes'),
 ];
 
 const contract = () => spawnSync(process.execPath, ['--test', 'tests/performance-contract.mjs'], { cwd: root, encoding: 'utf8' });
 
 if (contract().status !== 0) {
-  console.error('the contract is not green on the unmutated page; fix that first');
+  console.error('the contract is not green on the unmutated files; fix that first');
   process.exit(2);
 }
 
 const rows = [];
 try {
-  for (const [name, mutate, expected] of mutations) {
-    writeFileSync(pagePath, mutate(original));
+  for (const { name, file, mutate, expected } of mutations) {
+    writeFileSync(paths[file], mutate(originals[file], file));
     const outcome = contract().status === 0 ? 'passes' : 'caught';
     rows.push({ name, expected, outcome });
+    writeFileSync(paths[file], originals[file]); // restored at once, so mutations never stack
   }
 } finally {
-  writeFileSync(pagePath, original);
+  for (const file of FILES) writeFileSync(paths[file], originals[file]);
 }
 
 for (const { name, expected, outcome } of rows) {
