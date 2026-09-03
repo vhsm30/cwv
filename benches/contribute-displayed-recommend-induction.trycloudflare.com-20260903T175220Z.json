@@ -1,0 +1,376 @@
+{
+  "previewUrl": "https://contribute-displayed-recommend-induction.trycloudflare.com/",
+  "started": "2026-09-03T17:52:20.614Z",
+  "rounds": 3,
+  "container": {
+    "id": "GTM-PRVCQ335",
+    "holds": "one Google Tag ([SFP] 01 GA4 Config, id G-CNGFJDDBFB) on the built-in All Pages trigger, consent-gated (consentSettings.consentStatus=NEEDED on analytics_storage, no CMP banner); one constant variable holding the Measurement ID, plus the five built-in ones. Published 2026-09-03, superseding the empty floor."
+  },
+  "arms": [
+    {
+      "name": "control",
+      "path": "/",
+      "file": "index.html",
+      "delivery": "none"
+    },
+    {
+      "name": "gtm",
+      "path": "/arm-gtm.html",
+      "file": "arm-gtm.html",
+      "delivery": "head"
+    },
+    {
+      "name": "gtm-deferred",
+      "path": "/arm-gtm-deferred.html",
+      "file": "arm-gtm-deferred.html",
+      "delivery": "after-load"
+    }
+  ],
+  "runs": [
+    {
+      "arm": "control",
+      "role": "warm-up",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-20260903T175226Z.json"
+    },
+    {
+      "arm": "control",
+      "role": "round 1",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-20260903T175238Z.json"
+    },
+    {
+      "arm": "gtm",
+      "role": "round 1",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-20260903T175250Z.json"
+    },
+    {
+      "arm": "gtm-deferred",
+      "role": "round 1",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-deferred-20260903T175303Z.json"
+    },
+    {
+      "arm": "control",
+      "role": "round 2",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-20260903T175315Z.json"
+    },
+    {
+      "arm": "gtm",
+      "role": "round 2",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-20260903T175327Z.json"
+    },
+    {
+      "arm": "gtm-deferred",
+      "role": "round 2",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-deferred-20260903T175340Z.json"
+    },
+    {
+      "arm": "control",
+      "role": "round 3",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-20260903T175353Z.json"
+    },
+    {
+      "arm": "gtm",
+      "role": "round 3",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-20260903T175405Z.json"
+    },
+    {
+      "arm": "gtm-deferred",
+      "role": "round 3",
+      "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-deferred-20260903T175418Z.json"
+    }
+  ],
+  "reading": {
+    "rounds": 3,
+    "arms": {
+      "control": {
+        "n": 3,
+        "measures": {
+          "tbt": {
+            "min": 0,
+            "median": 0,
+            "max": 0
+          },
+          "lcp": {
+            "min": 921.044,
+            "median": 931.297,
+            "max": 938.865
+          },
+          "fcp": {
+            "min": 921.044,
+            "median": 931.297,
+            "max": 938.865
+          },
+          "requests": {
+            "min": 9,
+            "median": 9,
+            "max": 9
+          },
+          "transferBytes": {
+            "min": 44720,
+            "median": 44743,
+            "max": 44780
+          },
+          "thirdPartyBytes": {
+            "min": 0,
+            "median": 0,
+            "max": 0
+          },
+          "loadDelay": {
+            "min": 9.611,
+            "median": 10.577,
+            "max": 10.737
+          },
+          "renderDelay": {
+            "min": 35.068,
+            "median": 42.898,
+            "max": 45.919
+          },
+          "serverLatency": {
+            "min": 65.044,
+            "median": 71.297,
+            "max": 91.865
+          }
+        }
+      },
+      "gtm": {
+        "n": 3,
+        "measures": {
+          "tbt": {
+            "min": 202,
+            "median": 208,
+            "max": 244
+          },
+          "lcp": {
+            "min": 942.739,
+            "median": 951.9810000000002,
+            "max": 969.035
+          },
+          "fcp": {
+            "min": 942.739,
+            "median": 951.9810000000002,
+            "max": 969.035
+          },
+          "requests": {
+            "min": 12,
+            "median": 12,
+            "max": 12
+          },
+          "transferBytes": {
+            "min": 342753,
+            "median": 342757,
+            "max": 342799
+          },
+          "thirdPartyBytes": {
+            "min": 297718,
+            "median": 297718,
+            "max": 297741
+          },
+          "loadDelay": {
+            "min": 9.855,
+            "median": 10.455999938964844,
+            "max": 10.48
+          },
+          "renderDelay": {
+            "min": 35.239,
+            "median": 47.204,
+            "max": 52.595
+          },
+          "serverLatency": {
+            "min": 64.565,
+            "median": 67.6625,
+            "max": 73.286
+          }
+        }
+      },
+      "gtm-deferred": {
+        "n": 3,
+        "measures": {
+          "tbt": {
+            "min": 202,
+            "median": 280,
+            "max": 283
+          },
+          "lcp": {
+            "min": 947.014,
+            "median": 947.877,
+            "max": 956.798
+          },
+          "fcp": {
+            "min": 947.014,
+            "median": 947.877,
+            "max": 956.798
+          },
+          "requests": {
+            "min": 12,
+            "median": 12,
+            "max": 12
+          },
+          "transferBytes": {
+            "min": 342672,
+            "median": 342704,
+            "max": 342713
+          },
+          "thirdPartyBytes": {
+            "min": 297718,
+            "median": 297722,
+            "max": 297741
+          },
+          "loadDelay": {
+            "min": 9.491000061035157,
+            "median": 10.13,
+            "max": 10.612
+          },
+          "renderDelay": {
+            "min": 30.999,
+            "median": 35.839,
+            "max": 47.39
+          },
+          "serverLatency": {
+            "min": 65.72200000000001,
+            "median": 76.27199999999999,
+            "max": 78.846
+          }
+        }
+      }
+    },
+    "costs": {
+      "gtm": {
+        "tbt": {
+          "delta": 208,
+          "real": true
+        },
+        "lcp": {
+          "delta": 20.684000000000196,
+          "real": true
+        },
+        "fcp": {
+          "delta": 20.684000000000196,
+          "real": true
+        },
+        "requests": {
+          "delta": 3,
+          "real": true
+        },
+        "transferBytes": {
+          "delta": 298014,
+          "real": true
+        },
+        "thirdPartyBytes": {
+          "delta": 297718,
+          "real": true
+        },
+        "loadDelay": {
+          "delta": -0.12100006103515604,
+          "real": false
+        },
+        "renderDelay": {
+          "delta": 4.305999999999997,
+          "real": false
+        },
+        "serverLatency": {
+          "delta": -3.6345000000000027,
+          "real": false
+        }
+      },
+      "gtm-deferred": {
+        "tbt": {
+          "delta": 280,
+          "real": true
+        },
+        "lcp": {
+          "delta": 16.579999999999927,
+          "real": true
+        },
+        "fcp": {
+          "delta": 16.579999999999927,
+          "real": true
+        },
+        "requests": {
+          "delta": 3,
+          "real": true
+        },
+        "transferBytes": {
+          "delta": 297961,
+          "real": true
+        },
+        "thirdPartyBytes": {
+          "delta": 297722,
+          "real": true
+        },
+        "loadDelay": {
+          "delta": -0.4469999999999992,
+          "real": false
+        },
+        "renderDelay": {
+          "delta": -7.059000000000005,
+          "real": false
+        },
+        "serverLatency": {
+          "delta": 4.974999999999994,
+          "real": false
+        }
+      }
+    },
+    "runs": [
+      {
+        "arm": "control",
+        "role": "warm-up",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-20260903T175226Z.json",
+        "marks": []
+      },
+      {
+        "arm": "control",
+        "role": "round 1",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-20260903T175238Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm",
+        "role": "round 1",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-20260903T175250Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm-deferred",
+        "role": "round 1",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-deferred-20260903T175303Z.json",
+        "marks": []
+      },
+      {
+        "arm": "control",
+        "role": "round 2",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-20260903T175315Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm",
+        "role": "round 2",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-20260903T175327Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm-deferred",
+        "role": "round 2",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-deferred-20260903T175340Z.json",
+        "marks": []
+      },
+      {
+        "arm": "control",
+        "role": "round 3",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-20260903T175353Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm",
+        "role": "round 3",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-20260903T175405Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm-deferred",
+        "role": "round 3",
+        "report": "contribute-displayed-recommend-induction.trycloudflare.com-arm-gtm-deferred-20260903T175418Z.json",
+        "marks": []
+      }
+    ]
+  }
+}

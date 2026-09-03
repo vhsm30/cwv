@@ -184,17 +184,15 @@ cannot fail, and it is easiest to propose one in the same breath as the feature 
 **`reports/` holds the Reports**, named `<host>-<UTC fetchTime>Z.json` by the Run itself. See the
 `measuring-runs` skill for how to read one back.
 
-Current state (Run of 2026-09-03T16:15:33Z through a warm Cloudflare quick tunnel, the control's
-third round of that day's Bench): performance 100 / accessibility 100 / best-practices 100 / SEO
-100, FCP = LCP = 907 ms, TBT 0, CLS 0, 9 requests, 43.7 KB transferred; WebP arrives as
-`image/webp`, the script and the manifest gzipped, no robots-txt artifact, and `deprecations`,
-`inspector-issues` and `errors-in-console` all empty. The summary splits LCP into the Page share
-(load delay 12 ms, render delay 45 ms; the LCP image itself printed unresolved this Run — the
-breakdown's `src` snippet truncates to a two-character prefix that this tunnel's unusually long
-hostname makes ambiguous across all four Rungs under `images/`, though `network-requests` still
-names `hero-768.webp` at 6,746 B as what was fetched; recorded as D25) and the Tunnel share (TTFB
-148 ms, load duration 88 ms, Lantern's server latency 59 ms and RTT 23 ms). The three Runs of that
-2026-09-03T12:40–12:47Z tunnel session are the first
+Current state (Run of 2026-09-03T17:53:53Z through a warm Cloudflare quick tunnel, the control's
+third round of a Bench against the real container): performance 100 / accessibility 100 /
+best-practices 100 / SEO 100, FCP = LCP = 921 ms, TBT 0, CLS 0, 9 requests, 43.7 KB transferred;
+WebP arrives as `image/webp`, the script and the manifest gzipped, no robots-txt artifact, and
+`deprecations`, `inspector-issues` and `errors-in-console` all empty. The summary splits LCP into
+the Page share (load delay 11 ms, render delay 43 ms; the LCP image again printed unresolved —
+D25 recurred on this tunnel's hostname too, 58 characters, so this is not a one-off) and the
+Tunnel share (TTFB 150 ms, load duration 93 ms, Lantern's server latency 65 ms and RTT 21 ms). The
+three Runs of that 2026-09-03T12:40–12:47Z tunnel session are the first
 Paired Runs: 2026-09-03T12:40:10Z, after one warming GET, read LCP 1177 ms with a load duration of
 350 ms, a server-latency estimate of 266 ms (the summary names it a known artifact) and a render
 delay of 131 ms, the first Chrome of the session; 12:42:08Z, after the pre-flight had fetched every
@@ -216,19 +214,27 @@ the Page share, which the Tunnel cannot move; load duration, TTFB and Lantern's 
 Tunnel share, and two Runs of one page differ there first. A Win has to clear the wander, so it
 needs the `page` (or `image`) verdict on every repeat, not on one pair.
 
-Bench of record (benches/cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161359Z.json,
-2026-09-03T16:13:59Z, 3 rounds, GTM-PRVCQ335: empty: no tags, no triggers; five built-in variables.
-Published as the floor under any container.): control medians TBT 0 ms, LCP 930 ms, 9 requests,
-43.7 KB; gtm: TBT +37 ms (real) · LCP +9 ms (within the wander) · requests +1 (real) · transferred
-+115.4 KB (real) · third-party bytes +115.1 KB (real); gtm-deferred: TBT +35 ms (real) · LCP +12 ms
-(within the wander) · requests +1 (real) · transferred +115.4 KB (real) · third-party bytes
-+115.1 KB (real). Ten Runs, no marks — neither Arm's container missed Lighthouse's trace, and the
-pre-flight kept every round off the cold-tunnel artifact. What is real for both Arms, whether the
-snippet sits in the head or waits for an idle callback after load: one more request, the
-container's own transfer weight, and TBT; LCP and FCP moved by less than the control's own
-round-to-round spread for both, so an empty container is not yet shown to cost paint. This is the
-floor — `GTM-PRVCQ335` holds no tags — so every later Bench is read against a container that,
-unlike this one, actually does something.
+Bench of record (benches/contribute-displayed-recommend-induction.trycloudflare.com-20260903T175220Z.json,
+2026-09-03T17:52:20Z, 3 rounds, GTM-PRVCQ335: one Google Tag ([SFP] 01 GA4 Config, id
+G-CNGFJDDBFB) on the built-in All Pages trigger, consent-gated (consentSettings.consentStatus=NEEDED
+on analytics_storage, no CMP banner); one constant variable holding the Measurement ID, plus the
+five built-in ones. Published 2026-09-03, superseding the empty floor.): control medians TBT 0 ms,
+LCP 931 ms, 9 requests, 43.7 KB; gtm: TBT +208 ms (real) · LCP +21 ms (real) · requests +3 (real) ·
+transferred +291.0 KB (real) · third-party bytes +290.7 KB (real); gtm-deferred: TBT +280 ms
+(real) · LCP +17 ms (real) · requests +3 (real) · transferred +291.0 KB (real) · third-party bytes
++290.7 KB (real). Ten Runs, no marks. Both Arms now also fetch `www.google-analytics.com` — the
+config tag still sent a hit despite `consentSettings.consentStatus=NEEDED`, since nothing in this
+container sets an explicit default consent state (no CMP) for the tag's runtime to read as denied;
+worth confirming directly in GTM's consent-state debugger if that matters for a later container.
+Everything the floor Bench
+(benches/cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161359Z.json)
+called within the wander is real here: a container that actually does something costs LCP as well
+as TBT. The one surprise: `gtm-deferred` costs *more* TBT than `gtm` (+280 ms against +208 ms),
+not less, while still costing *less* LCP (+17 ms against +21 ms) — TBT sums blocking time across
+the whole trace, not only before paint, so moving the container's execution later shifts it out of
+LCP's way without shrinking it; deferring helps what it can help and nothing else. Performance
+reads 96 (`gtm`) and 94 (`gtm-deferred`) against the control's 100 — the first Arm scores below
+100 a Bench has produced.
 
 ## Change guidelines
 

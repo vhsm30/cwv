@@ -1,7 +1,7 @@
 {
   "container": {
     "id": "GTM-PRVCQ335",
-    "holds": "empty: no tags, no triggers; five built-in variables. Published as the floor under any container."
+    "holds": "one Google Tag ([SFP] 01 GA4 Config, id G-CNGFJDDBFB) on the built-in All Pages trigger, consent-gated (consentSettings.consentStatus=NEEDED on analytics_storage, no CMP banner); one constant variable holding the Measurement ID, plus the five built-in ones. Published 2026-09-03, superseding the empty floor."
   },
   "arms": [
     { "name": "control", "path": "/", "file": "index.html", "delivery": "none" },

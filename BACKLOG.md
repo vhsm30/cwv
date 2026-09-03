@@ -726,7 +726,11 @@ what was actually fetched.
 `https://cartoons-environmental-undergraduate-emission.trycloudflare.com/im…`;
 `node tools/run.mjs reports/<that file>.json` prints `page share: load delay 12 ms · render delay
 45 ms · LCP image - (-)`. CLAUDE.md's current-state paragraph records the same Run and names this
-item.
+item. It recurred the same day on a second, unrelated tunnel hostname
+(`contribute-displayed-recommend-induction.trycloudflare.com`, 58 characters,
+`reports/contribute-displayed-recommend-induction.trycloudflare.com-20260903T175353Z.json`) — two
+for two quick-tunnel hostnames so far, so this is not a rare edge case; a four-random-word
+`trycloudflare.com` hostname is long enough to trigger it more often than not.
 
 **Shape.** `lcpResource` needs a second signal once the prefix is this short: the same snippet's
 `srcset` attribute names every Rung's filename (`hero-` already appears before the truncation
