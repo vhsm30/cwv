@@ -243,11 +243,20 @@ same day, from the first `/improve` run.
 
 | # | Item | Dependency category | Status |
 |---|---|---|---|
-| B5 | The Run warms the Preview URL before measuring | local-substitutable | Open |
+| B5 | The Run warms the Preview URL before measuring | local-substitutable | **Done** |
 | D11 | `favicon.ico` leaves the Measurement Server uncompressed | in-process | Open |
-| D12 | `CLAUDE.md`'s current state is prose nothing ties to the newest Report | local-substitutable | Open |
+| D12 | `CLAUDE.md`'s current state is prose nothing ties to the newest Report | local-substitutable | **Done** |
 
 ### B5 · The Run warms the Preview URL before measuring
+
+**Status. Done** with P0 of `docs/superpowers/plans/2026-09-02-ecommerce-bench.md` (2026-09-03),
+together with B9: `performRun` takes a `preflight` adapter beside `measure` (`tools/run.mjs`,
+`fetchPreflight`), which fetches the document and then every asset the page references, in
+parallel — the Shape below said one GET, and the Run of 2026-09-03T12:40:10Z, taken after exactly
+one, still read a 266 ms server-latency estimate: Chrome's parallel requests take paths one
+request does not warm. `tests/run.mjs` asserts with a counting fake that the pre-flight runs before
+`measure`, does not run when the URL is refused, stops the Run when it refuses, and warms every
+asset the page model lists. A Run that still measures a cold tunnel is named in its summary (B8).
 
 **Problem.** Lighthouse's simulated throttling takes the server's response time from the one
 navigation it observes, and the first request through a fresh quick tunnel is a cold start. A Run
@@ -276,6 +285,12 @@ so a Run through Cloudflare cannot show the difference; a Run through ngrok, or 
 1.5 KB. It is fetched after load, so no metric moves: bytes, not a Win, unless a Run says otherwise.
 
 ### D12 · `CLAUDE.md`'s current state is prose nothing ties to the newest Report
+
+**Status. Done** with P0 (2026-09-03), in the Shape's second form: `node tools/run.mjs
+reports/<file>.json` ends with a `CLAUDE.md:` line (`formatCurrentState`, `lib/report.mjs`) that the
+paragraph quotes verbatim, and `tests/run.mjs` asserts that the Run CLAUDE.md cites is the newest
+Report on disk and that its line appears in the paragraph. The next Run fails the suite until the
+paragraph is pasted over.
 
 **Problem.** `CLAUDE.md:145` quotes one Run — its fetchTime, scores, metrics, request count and
 bytes — by hand. D7 closed by making that paragraph read from the newest Run, but nothing asserts
@@ -592,8 +607,8 @@ was 267 ms against 60 ms here, so it measured the tunnel, and is kept as the rec
 | # | Item | Dependency category | Status |
 |---|---|---|---|
 | B7 | Teach the Run to measure a Worker-warm repeat visit | mock (Lighthouse CLI) | Open |
-| B8 | The Run's summary names nothing of the tunnel's share | in-process | Open |
-| B9 | The Run refuses a poisoned hostname only after a full Lighthouse pass | mock (Lighthouse CLI) | Open |
+| B8 | The Run's summary names nothing of the tunnel's share | in-process | **Done** |
+| B9 | The Run refuses a poisoned hostname only after a full Lighthouse pass | mock (Lighthouse CLI) | **Done** |
 
 ### B7 · Teach the Run to measure a Worker-warm repeat visit
 
@@ -613,6 +628,18 @@ flag that also changes its name. Touches `tools/run.mjs`, `lib/report.mjs`, the 
 
 ### B8 · The Run's summary names nothing of the tunnel's share
 
+**Status. Done** with P0 (2026-09-03). The summary prints the **Page share** (load delay, render
+delay, the LCP image's own bytes) and the **Tunnel share** (TTFB, load duration, Lantern's
+server-latency and RTT estimates), both defined in CONTEXT.md; a server-latency estimate above
+150 ms is a known artifact (`network-server-latency`, `lib/report.mjs`), and `node tools/run.mjs
+compare` reads two Reports side by side with a verdict on whose the LCP difference is. The evidence
+below was wrong in one respect and the corrected reading is why the shares are split as they are:
+the two Runs did **not** have the same load duration — 315 ms against 83 ms — and across all
+eighteen Reports load duration tracks the tunnel (83–88 ms warm, 315–332 ms cold for one Rung)
+while load delay and render delay hold; the simulated LCP moved by −203 ms for −210 ms of
+server-latency estimate. The pair is also two Preview URLs, so it is not a Paired Run; `compare`
+names it as such and still reads `tunnel`.
+
 **Problem.** Two Runs of the same page twelve minutes apart on 2026-09-02 read LCP 1114 ms and
 911 ms with the same load delay, load duration and render delay. The summary printed both as if
 they were the page's; the difference was Lantern's `network-server-latency` estimate (267 ms against
@@ -631,6 +658,17 @@ of it; no tunnel or Chrome needed.
 
 ### B9 · The Run refuses a poisoned hostname only after a full Lighthouse pass
 
+**Status. Done** with P0 (2026-09-03), together with B5, in a shape that deviates from the one
+below: instead of launching Chrome, the pre-flight asks the configured DNS servers directly
+(`dns.Resolver`, c-ares — the Windows cache that `curl` reads from is bypassed, which is the cache
+that said "yes" on 2026-09-02 while Chrome was told "no such name"), then fetches the document
+once and reads it through the page model against `index.html`. It refuses in seconds naming DNS
+when the name does not resolve, the status when it is not 200, the title when the document is not
+the Storefront's, and the assets when an older Measurement Server is still answering.
+`tests/run.mjs` exercises every refusal against in-test HTTP servers and a reserved `.invalid`
+name, and the command itself against that name. Which resolver Lighthouse's Chrome asks is not
+established; the `measuring-runs` skill keeps the wait and the `nslookup … 1.1.1.1` first.
+
 **Problem.** A fresh quick-tunnel hostname looked up before it propagates leaves the ISP resolver
 holding "no such name" for 30 minutes. The Run checks the URL's shape, launches Chrome, waits out
 the whole measurement, and only then refuses the Report with `CHROME_INTERSTITIAL_ERROR` — a reason
@@ -645,6 +683,25 @@ fact); the `measuring-runs` skill, "A fresh hostname and DNS", for the procedure
 will launch (headless `--dump-dom`, or one CDP navigation) and refuse to measure when the document
 that comes back is not the Storefront's, naming DNS as the likely cause. This is also where B5's
 warming request belongs, so one request does both.
+
+## The e-commerce bench · 2026-09-03
+
+`docs/superpowers/plans/2026-09-02-ecommerce-bench.md` is the program: the Storefront grows into an
+e-commerce Core Web Vitals bench in six sub-projects, P0–P5, of which P0 — make two Runs comparable
+— was approved and is built (B5, B8, B9 and D12 above; CONTEXT.md gained Tunnel, Page share, Tunnel
+share and Paired Run; `docs/adr/0001` records the reversal of the no-build-step rule). The plan
+proposes where the items still open would be absorbed, recorded here so the evolution pays the
+backlog down instead of orphaning it; each stays **Open** until its phase is picked and planned,
+per CLAUDE.md's backlog rule.
+
+| Item | Proposed by the plan for | Why there |
+|---|---|---|
+| B6 structured data | P3 (the catalogue) | Answerable once Products have their own Routes; still without `Offer` |
+| B7 Worker-warm repeat visit | P2 (Routes) | Navigating between Routes is what a Worker changes |
+| D14 canonical · D15 Open Graph · D17 nav below 700px · D18 `#story` nesting | P2 (Routes) | Each is a property of a document a generator would write once |
+| D23 validators for `no-cache` | P2 (Routes), beside B7 | Both are what a repeat view costs, which nothing measures yet |
+
+Unassigned and Open: D11, D13, D16, D19, D20, D21, D24.
 
 ## Set aside on 2026-08-27
 
@@ -680,6 +737,9 @@ Recorded so the next review does not re-raise them.
   (see D9). Folded.
 - **A readable CSS source for the inline `<style>`**: contradicts CLAUDE.md's no-build-step rule. No
   ADR records that rule; if it is meant to hold, it deserves one (`docs/adr/` does not exist yet).
+  Since 2026-09-03, `docs/adr/0001-tooling-may-generate-what-ships.md` records that rule's
+  reversal — tooling may generate what ships, committed and byte-identical on rebuild — so this is
+  unpicked, not forbidden.
 - **Glossary drift**: `.catalog` (`index.html:13`, `:39`) and `#shop` (`:20`, `:29`, `:39`, `:41`)
   in the markup; "demo shop" (`CLAUDE.md:8–9`), "audit", "fix", "guard" elsewhere in CLAUDE.md;
   "demo" in `llms.txt:3`, and "optimize"/"optimization" in CLAUDE.md prose (`:9`, `:75`) — all on

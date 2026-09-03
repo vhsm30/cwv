@@ -10,7 +10,10 @@ measure → optimize → lock-in loop around it: serve the page locally, expose 
 quick tunnel, perform a Run against the Preview URL, and encode each Win as an assertion so it
 cannot silently regress.
 
-No package manager, no build step, no framework. Everything shipped is hand-written and hand-minified.
+No package manager, no framework, and nothing shipped to the browser has a dependency. Tooling may
+generate what ships — `images/` and `icons/` already are, from PIL — provided the generated files
+are committed and rebuild byte-identically (`docs/adr/0001-tooling-may-generate-what-ships.md`);
+`index.html` is hand-written and hand-minified today.
 
 `CONTEXT.md` defines this project's vocabulary (Run, Report, Preview URL, Win, Lock-in,
 Performance Contract, Generation, Slot, Rung, Master, ...). Use those terms and honour the words it
@@ -22,7 +25,9 @@ says to avoid.
 python server.py 8000                              # the Measurement Server at http://localhost:8000/ (0 = ephemeral port)
 ./start-cloudflare.ps1                             # PowerShell: starts server.py + a Cloudflare quick tunnel (the Preview URL)
 ./start-ngrok.ps1 -Domain <ngrok-domain>           # PowerShell: the ngrok alternative (omit -Domain for a temp URL)
-node tools/run.mjs https://<name>.trycloudflare.com/   # perform a Run, save the Report, print the summary
+node tools/run.mjs https://<name>.trycloudflare.com/   # perform a Run: pre-flight (resolve, warm, read the document), measure, save the Report, print the summary
+node tools/run.mjs reports/<file>.json             # print a recorded Report's summary and its CLAUDE.md current-state line
+node tools/run.mjs compare <earlier>.json <later>.json   # a Paired Run read side by side: every delta, and whose the LCP difference is
 node --test "tests/**/*.mjs"                       # every assertion: Performance Contract, Measurement Server, Run
 node --test tests/performance-contract.mjs         # the Performance Contract alone (page + images)
 node --test tests/measurement-server.mjs           # the Measurement Server alone (spawns python server.py 0)
@@ -155,26 +160,41 @@ cannot fail, and it is easiest to propose one in the same breath as the feature 
 **`reports/` holds the Reports**, named `<host>-<UTC fetchTime>Z.json` by the Run itself. See the
 `measuring-runs` skill for how to read one back.
 
-Current state (Run of 2026-09-02T18:36:43Z through a warm Cloudflare quick tunnel, the first of the
-PWA): performance 100 / accessibility 100 / best-practices 100 / SEO 100, FCP = LCP = 911 ms, TBT 0,
-CLS 0, 9 requests, 43.7 KB transferred; WebP arrives as `image/webp`, the script and the manifest
-gzipped, no robots-txt artifact, and `deprecations`, `inspector-issues` and `errors-in-console` all
-empty. Of the 911 ms, 133 ms is time to first byte, then 10 ms load delay, 83 ms load duration and
-41 ms render delay (`lcp-breakdown-insight`). The last Run before the PWA (2026-08-25T12:41:32Z,
-same kind of tunnel) read 946 ms with TTFB 174 ms and the same page share (10 / 88 / 48) over 7
-requests and 32.3 KB; the two requests the PWA adds are `manifest.webmanifest` (594 B) and
-`icon-v1-180.png` (10.1 KB), and the unchanged page share says neither sits on the LCP's path. A
-Run twelve minutes earlier through another tunnel (2026-09-02T18:24:24Z) read LCP 1114 ms with that
-same page share: Lantern's `network-server-latency` estimate for it was 267 ms against the usual
-60–90 ms, so the difference was the tunnel's. The last ngrok Run (2026-08-21T17:26:57Z) read TTFB
-105 ms and FCP 894 / LCP 936 ms — the same page share; the bytes differ (response headers ~70 B apart
-per request, and Cloudflare gzips the favicon). Compare Runs taken through the same tunnel only, and
-read the page's own share of LCP — load delay, load duration, render delay — which is what a Win
-moves.
+Current state (Run of 2026-09-03T12:47:21Z through a warm Cloudflare quick tunnel, the third of
+the day through it): performance 100 / accessibility 100 / best-practices 100 / SEO 100, FCP =
+LCP = 947 ms, TBT 0, CLS 0, 9 requests, 43.7 KB transferred; WebP arrives as `image/webp`, the
+script and the manifest gzipped, no robots-txt artifact, and `deprecations`, `inspector-issues`
+and `errors-in-console` all empty. The summary splits LCP into the Page share (load delay 11 ms,
+render delay 58 ms, the 6.5 KB `hero-768.webp`) and the Tunnel share (TTFB 145 ms, load duration
+76 ms, Lantern's server latency 58 ms and RTT 20 ms). The three Runs of that day are the first
+Paired Runs: 2026-09-03T12:40:10Z, after one warming GET, read LCP 1177 ms with a load duration of
+350 ms, a server-latency estimate of 266 ms (the summary names it a known artifact) and a render
+delay of 131 ms, the first Chrome of the session; 12:42:08Z, after the pre-flight had fetched every
+asset, read 1006 ms with 93 / 59 ms and 47 ms, and `node tools/run.mjs compare` over the two says
+`tunnel`; 12:42 → 12:47 says `noise` — LCP −59 ms with the Page share +7 ms and the estimates
+−1 ms, which is what a tunnel looks like when nothing changed. The Run of record before these
+(2026-09-02T18:36:43Z, the first of the PWA, another tunnel) read 911 ms with a Page share of
+10 / 41 ms and a Tunnel share of 133 / 83 / 57 / 21 ms; `compare` against 12:47 reads `page` on
++17 ms of render delay for +35 ms of LCP, which is the wander an unchanged page shows between Runs
+(35–65 ms of render delay across the Reports), not a regression — one pair cannot tell the two
+apart, and the verdict says so. The last Run before the PWA (2026-08-25T12:41:32Z) read 946 ms with
+a Page share of 10 / 48 ms over 7 requests and 32.3 KB; the two requests the PWA adds are
+`manifest.webmanifest` (594 B) and `icon-v1-180.png` (10.1 KB), and the 35 ms of LCP gained by
+2026-09-02 was exactly the 35 ms Lantern's server-latency estimate fell by (92 → 57 ms), the
+tunnel's. The last ngrok Run (2026-08-21T17:26:57Z) read TTFB 105 ms and FCP 894 / LCP 936 ms with
+a Page share of 13 / 36 ms; the bytes differ (response headers ~70 B apart per request, and
+Cloudflare gzips the favicon). Compare Runs through one Preview URL only — a Paired Run — and read
+the Page share, which the Tunnel cannot move; load duration, TTFB and Lantern's estimates are the
+Tunnel share, and two Runs of one page differ there first. A Win has to clear the wander, so it
+needs the `page` (or `image`) verdict on every repeat, not on one pair.
 
 ## Change guidelines
 
-- Keep the site framework-free and dependency-free unless a migration is explicitly requested.
+- Keep the Storefront framework-free and dependency-free unless a migration is explicitly requested.
+- Anything that gets in the way of evolving the Storefront is contested and kept only if necessary.
+  A rule that survives the contest is recorded in `docs/adr/` with the reason it survived; a rule
+  that does not is reversed there too (ADR 0001 is the first).
+- Plans live in `docs/superpowers/plans/`, dated, and are committed with the work they describe.
 - Image facts change in `images/slots.json` first; then rebuild with `tools/build-images.py` and
   update the markup until the contract is green. Icon facts change in `manifest.webmanifest` first;
   then rebuild with `tools/build-icons.py`.

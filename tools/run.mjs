@@ -4,24 +4,87 @@
 //
 //     node tools/run.mjs https://<name>.trycloudflare.com/
 //
-// The measurement carries ngrok's bypass header: free-tier ngrok answers browser user-agents with
-// an interstitial unless it is present, and every other tunnel ignores it. The Report is then
-// checked (lib/report.mjs) before it is saved under reports/, named by its own UTC fetchTime, and
-// summarised. Two adapters satisfy `measure`: Lighthouse (lighthouseMeasure) and a recorded Report
-// (recordedMeasure), which is how tests/run.mjs asserts everything after the measurement without a
+// Before Chrome launches, a pre-flight (fetchPreflight) resolves the hostname directly at the
+// configured DNS servers, fetches the document and reads it against the page on disk, and then
+// warms the tunnel by fetching every asset the page references, so a hostname that has not
+// propagated or a stale Measurement Server is refused in seconds rather than after a full
+// Lighthouse pass, and the Run does not measure the tunnel waking up. The measurement carries ngrok's bypass header: free-tier
+// ngrok answers browser user-agents with an interstitial unless it is present, and every other
+// tunnel ignores it. The Report is then checked (lib/report.mjs) before it is saved under reports/,
+// named by its own UTC fetchTime, and summarised. Two adapters satisfy `measure`: Lighthouse
+// (lighthouseMeasure) and a recorded Report (recordedMeasure), and two satisfy `preflight`: the real
+// one and a no-op, which is how tests/run.mjs asserts everything after the measurement without a
 // tunnel or Chrome.
 import { exec, spawn } from 'node:child_process';
+import dns from 'node:dns/promises';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
-import { checkReport, formatSummary, previewUrlProblem, reportName, summarize } from '../lib/report.mjs';
+import { loadPage, parsePage } from '../lib/page.mjs';
+import { checkReport, compare, formatComparison, formatCurrentState, formatSummary, previewUrlProblem, reportName, summarize } from '../lib/report.mjs';
 
 const REPORTS_DIR = fileURLToPath(new URL('../reports/', import.meta.url));
+const INDEX_URL = new URL('../index.html', import.meta.url);
 const BYPASS_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
 const CATEGORIES = 'performance,accessibility,best-practices,seo';
+// Asks the configured DNS servers directly (c-ares), bypassing the Windows cache that `curl` reads
+// from — the cache that said "yes" on 2026-09-02 while the Run's Chrome was told "no such name".
+// Bounded, so an unanswered query refuses in seconds.
+const resolver = new dns.Resolver({ timeout: 3000, tries: 2 });
+
+const dnsProblem = (hostname, code) =>
+  `${hostname} does not resolve (${code}) at the configured DNS servers, asked directly rather than through the Windows cache: a fresh quick-tunnel hostname that has not propagated, or a resolver holding a poisoned answer — start a new tunnel rather than waiting out the TTL (measuring-runs, "A fresh hostname and DNS")`;
+
+// The pre-flight: every reason to refuse before Chrome launches, or empty. One DNS query, one GET
+// of the document read through the page model against the page on disk, and then the warming: a
+// fresh quick tunnel answers its first request in ~1.4 s and the next in ~0.2 s, and a Run taken
+// cold records the tunnel waking up as the page's LCP.
+export async function fetchPreflight(url) {
+  const { hostname } = new URL(url);
+  if (!net.isIP(hostname)) {
+    try {
+      await resolver.resolve4(hostname);
+    } catch (error) {
+      return [dnsProblem(hostname, error.code ?? error.message)];
+    }
+  }
+  let response;
+  try {
+    response = await fetch(url, { headers: BYPASS_HEADERS, redirect: 'manual' });
+  } catch (error) {
+    const code = error.cause?.code ?? error.code ?? error.message;
+    if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return [dnsProblem(hostname, code)];
+    return [`could not reach ${url} (${code})`];
+  }
+  if (response.status !== 200) return [`the document at ${url} answered ${response.status}, not 200`];
+  const served = parsePage(await response.text(), url);
+  const expected = await loadPage(INDEX_URL);
+  if (served.title !== expected.title) {
+    return [`the document at ${url} is not the Storefront's: its title is "${served.title}" against "${expected.title}"`];
+  }
+  const missing = expected.assets.filter((asset) => !served.assets.includes(asset));
+  const extra = served.assets.filter((asset) => !expected.assets.includes(asset));
+  if (missing.length || extra.length) {
+    return [
+      `the document at ${url} is not the Storefront on disk: it references ${extra.join(', ') || 'nothing'} where the page on disk references ${missing.join(', ') || 'nothing'} — an older Measurement Server still listening?`,
+    ];
+  }
+  // Warm the paths the Run's Chrome will take, in parallel, the way the page loads: one GET is not
+  // enough for a fresh quick tunnel (the Run of 2026-09-03T12:40:10Z followed one and still read a
+  // 266 ms server-latency estimate). Best effort — a missing asset is the Run's to record.
+  await Promise.all(
+    expected.assets.map((asset) =>
+      fetch(new URL(asset, url), { headers: BYPASS_HEADERS })
+        .then((r) => r.arrayBuffer())
+        .catch(() => undefined),
+    ),
+  );
+  return [];
+}
 
 export class RunRefused extends Error {
   constructor(reasons) {
@@ -31,10 +94,13 @@ export class RunRefused extends Error {
   }
 }
 
-// Perform a Run: refuse anything but a Preview URL, measure, refuse an unreal Report, save, summarise.
-export async function performRun({ url, measure = lighthouseMeasure, reportsDir = REPORTS_DIR }) {
+// Perform a Run: refuse anything but a Preview URL, pre-flight (resolve, warm, read the document),
+// measure, refuse an unreal Report, save, summarise.
+export async function performRun({ url, measure = lighthouseMeasure, reportsDir = REPORTS_DIR, preflight = fetchPreflight }) {
   const problem = previewUrlProblem(url);
   if (problem) throw new RunRefused([problem]);
+  const refusals = await preflight(url);
+  if (refusals.length) throw new RunRefused(refusals);
   const report = await measure(url);
   const reasons = checkReport(report, url);
   if (reasons.length) throw new RunRefused(reasons);
@@ -123,27 +189,41 @@ function finished(child) {
 
 const invokedDirectly = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 if (invokedDirectly) {
-  const target = process.argv[2];
-  if (!target) {
+  const usage = () => {
     console.error(
       'usage: node tools/run.mjs <preview-url>\n' +
-        '       node tools/run.mjs <report.json>\n\n' +
+        '       node tools/run.mjs <report.json>\n' +
+        '       node tools/run.mjs compare <earlier.json> <later.json>\n\n' +
         'Performs a Run of the Preview URL, refuses an unreal Report, saves the Report under\n' +
         'reports/ named by its UTC moment of capture, and prints the summary.\n' +
-        'Given a recorded Report instead, prints its summary without measuring anything.',
+        'Given a recorded Report instead, prints its summary without measuring anything.\n' +
+        'Given two, compares them: every delta later minus earlier, and whose the LCP difference is.',
     );
     process.exit(2);
-  }
+  };
+  const target = process.argv[2];
+  if (!target) usage();
+  const recorded = (file) => recordedMeasure(pathToFileURL(path.resolve(file)))();
   try {
-    if (target.endsWith('.json')) {
-      const report = await recordedMeasure(pathToFileURL(path.resolve(target)))();
-      console.log(formatSummary(summarize(report)));
+    if (target === 'compare') {
+      const [earlier, later] = process.argv.slice(3);
+      if (!earlier || !later) usage();
+      console.log(formatComparison(compare(await recorded(earlier), await recorded(later))));
+    } else if (target.endsWith('.json')) {
+      const summary = summarize(await recorded(target));
+      console.log(formatSummary(summary));
+      // Pasted into CLAUDE.md's current state, never composed: tests/run.mjs holds them equal.
+      console.log(`CLAUDE.md: ${formatCurrentState(summary)}`);
     } else {
+      const preflight = (previewUrl) => {
+        console.error(`Pre-flight: resolving ${new URL(previewUrl).hostname} and warming ${previewUrl}...`);
+        return fetchPreflight(previewUrl);
+      };
       const measure = (previewUrl) => {
         console.error(`Measuring ${previewUrl} at mobile form factor under simulated throttling...`);
         return lighthouseMeasure(previewUrl);
       };
-      const { path: saved, summary } = await performRun({ url: target, measure });
+      const { path: saved, summary } = await performRun({ url: target, measure, preflight });
       console.log(formatSummary(summary));
       console.log(`Saved ${path.relative(process.cwd(), saved)}`);
     }

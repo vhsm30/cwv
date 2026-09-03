@@ -22,6 +22,12 @@ The public address the page is exposed at for a Run, by cloudflared (the default
 only address a Run is valid against, because the throttling model assumes a real network hop.
 _Avoid_: localhost, staging URL, tunnel, dev URL
 
+**Tunnel**:
+The cloudflared or ngrok process that carries the Preview URL to the Measurement Server. Its cold
+start, its edge and the resolvers' view of its hostname are measured by every Run and belong to no
+page.
+_Avoid_: proxy, relay, hop, network
+
 **Measurement Server**:
 The origin the page is served from, whose keep-alive, compression, and cache headers are part of
 what a Run measures rather than scaffolding around it.
@@ -108,3 +114,22 @@ _Avoid_: precache, app shell, bundle
 The one element that offers to add the Storefront to the home screen, and later offers the newer
 Generation. Hidden until the browser says it may be shown, so no Run ever sees it.
 _Avoid_: banner, prompt, toast, modal
+
+### Two Runs side by side
+
+**Page share**:
+Of what a Run observed on the way to LCP, the part the Tunnel cannot move: the LCP element's load
+delay and render delay, and the bytes of the Rung it loaded. The browser's own state moves it too,
+which is why one Paired Run reads it and repeats decide.
+_Avoid_: own time, real LCP, page time
+
+**Tunnel share**:
+Of what a Run observed on the way to LCP, the part the Tunnel moves — time to first byte and the
+LCP element's load duration — together with the server-latency and round-trip estimates the
+simulated LCP is built from. Two Runs of one page differ here first.
+_Avoid_: network time, overhead, noise
+
+**Paired Run**:
+Two Runs through one Preview URL minutes apart, read side by side so the Tunnel share cancels and
+a difference in the Page share can be called the page's.
+_Avoid_: A/B test, before/after, comparison, benchmark
