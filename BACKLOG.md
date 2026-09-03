@@ -689,7 +689,10 @@ warming request belongs, so one request does both.
 `docs/superpowers/plans/2026-09-02-ecommerce-bench.md` is the program: the Storefront grows into an
 e-commerce Core Web Vitals bench in six sub-projects, P0–P5, of which P0 — make two Runs comparable
 — was approved and is built (B5, B8, B9 and D12 above; CONTEXT.md gained Tunnel, Page share, Tunnel
-share and Paired Run; `docs/adr/0001` records the reversal of the no-build-step rule). The plan
+share and Paired Run; `docs/adr/0001` records the reversal of the no-build-step rule), and P1 — the
+Bench: control, client-side GTM, deferred GTM — is built (spec
+`docs/superpowers/specs/2026-09-03-bench-design.md`, plan `docs/superpowers/plans/2026-09-03-bench.md`;
+CONTEXT.md gained Arm and Bench; nothing listed below was absorbed, B7 being P2's). The plan
 proposes where the items still open would be absorbed, recorded here so the evolution pays the
 backlog down instead of orphaning it; each stays **Open** until its phase is picked and planned,
 per CLAUDE.md's backlog rule.
@@ -701,7 +704,37 @@ per CLAUDE.md's backlog rule.
 | D14 canonical · D15 Open Graph · D17 nav below 700px · D18 `#story` nesting | P2 (Routes) | Each is a property of a document a generator would write once |
 | D23 validators for `no-cache` | P2 (Routes), beside B7 | Both are what a repeat view costs, which nothing measures yet |
 
-Unassigned and Open: D11, D13, D16, D19, D20, D21, D24.
+Unassigned and Open: D11, D13, D16, D19, D20, D21, D24, D25.
+
+### D25 · `lcpResource`'s prefix match goes ambiguous under a long tunnel hostname
+
+**Status. Open.** Found during P1's live Bench (2026-09-03).
+
+**Problem.** `lib/report.mjs`'s `lcpResource(report)` finds the LCP element's own request by
+matching `network-requests` entries whose URL starts with the `src="…"` prefix carried in
+`lcp-breakdown-insight`'s node snippet — a prefix Lighthouse truncates to a length of its own
+choosing, not the page's. Against this Bench's tunnel host
+(`cartoons-environmental-undergraduate-emission.trycloudflare.com`, 63 characters), the snippet
+truncated to `.../im…`, two characters past the origin, which is a prefix of all four Rungs under
+`images/` (`hero-768.webp`, `notebook-400.webp`, `mug-374.webp`, `coffee-374.webp`). The match came
+back ambiguous on every Report of that tunnel, control included — `pageShare.lcpUrl`/`lcpBytes`
+printed `-`, even though `network-requests` on the same Report names `hero-768.webp` (6,746 B) as
+what was actually fetched.
+
+**Evidence.** `reports/cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161533Z.json`'s
+`lcp-breakdown-insight` node item's `snippet` truncates the `src` to
+`https://cartoons-environmental-undergraduate-emission.trycloudflare.com/im…`;
+`node tools/run.mjs reports/<that file>.json` prints `page share: load delay 12 ms · render delay
+45 ms · LCP image - (-)`. CLAUDE.md's current-state paragraph records the same Run and names this
+item.
+
+**Shape.** `lcpResource` needs a second signal once the prefix is this short: the same snippet's
+`srcset` attribute names every Rung's filename (`hero-` already appears before the truncation
+point here), so a fixed, non-interpolated pattern could recover the Slot's own filename stem
+without depending on the prefix at all, or the `selector`/`boundingRect` the node item already
+carries could disambiguate against `lib/page.mjs`'s Slot model. Mutation-check it: a fixture
+Report with a short truncated prefix that matches two or more Rungs should still resolve, and one
+where it cannot should say so rather than print `-` silently.
 
 ## Set aside on 2026-08-27
 

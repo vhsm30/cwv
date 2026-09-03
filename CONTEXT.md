@@ -133,3 +133,16 @@ _Avoid_: network time, overhead, noise
 Two Runs through one Preview URL minutes apart, read side by side so the Tunnel share cancels and
 a difference in the Page share can be called the page's.
 _Avoid_: A/B test, before/after, comparison, benchmark
+
+### The Bench
+
+**Arm**:
+The Storefront delivered with one way of loading the tags, at its own URL; the control is the
+Storefront delivered with none. An Arm is derived from the control and differs from it by that one
+way only.
+_Avoid_: variant, treatment, version, experiment, test page
+
+**Bench**:
+One session of Runs through one Preview URL, every Arm in turn for several rounds, read as each
+Arm's spread against the control's. A cost is real when the two spreads do not overlap.
+_Avoid_: benchmark, A/B test, experiment, study

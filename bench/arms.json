@@ -1,0 +1,11 @@
+{
+  "container": {
+    "id": "GTM-PRVCQ335",
+    "holds": "empty: no tags, no triggers; five built-in variables. Published as the floor under any container."
+  },
+  "arms": [
+    { "name": "control", "path": "/", "file": "index.html", "delivery": "none" },
+    { "name": "gtm", "path": "/arm-gtm.html", "file": "arm-gtm.html", "delivery": "head" },
+    { "name": "gtm-deferred", "path": "/arm-gtm-deferred.html", "file": "arm-gtm-deferred.html", "delivery": "after-load" }
+  ]
+}

@@ -1,0 +1,376 @@
+{
+  "previewUrl": "https://cartoons-environmental-undergraduate-emission.trycloudflare.com/",
+  "started": "2026-09-03T16:13:59.514Z",
+  "rounds": 3,
+  "container": {
+    "id": "GTM-PRVCQ335",
+    "holds": "empty: no tags, no triggers; five built-in variables. Published as the floor under any container."
+  },
+  "arms": [
+    {
+      "name": "control",
+      "path": "/",
+      "file": "index.html",
+      "delivery": "none"
+    },
+    {
+      "name": "gtm",
+      "path": "/arm-gtm.html",
+      "file": "arm-gtm.html",
+      "delivery": "head"
+    },
+    {
+      "name": "gtm-deferred",
+      "path": "/arm-gtm-deferred.html",
+      "file": "arm-gtm-deferred.html",
+      "delivery": "after-load"
+    }
+  ],
+  "runs": [
+    {
+      "arm": "control",
+      "role": "warm-up",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161405Z.json"
+    },
+    {
+      "arm": "control",
+      "role": "round 1",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161418Z.json"
+    },
+    {
+      "arm": "gtm",
+      "role": "round 1",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-20260903T161430Z.json"
+    },
+    {
+      "arm": "gtm-deferred",
+      "role": "round 1",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-deferred-20260903T161444Z.json"
+    },
+    {
+      "arm": "control",
+      "role": "round 2",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161456Z.json"
+    },
+    {
+      "arm": "gtm",
+      "role": "round 2",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-20260903T161509Z.json"
+    },
+    {
+      "arm": "gtm-deferred",
+      "role": "round 2",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-deferred-20260903T161521Z.json"
+    },
+    {
+      "arm": "control",
+      "role": "round 3",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161533Z.json"
+    },
+    {
+      "arm": "gtm",
+      "role": "round 3",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-20260903T161545Z.json"
+    },
+    {
+      "arm": "gtm-deferred",
+      "role": "round 3",
+      "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-deferred-20260903T161558Z.json"
+    }
+  ],
+  "reading": {
+    "rounds": 3,
+    "arms": {
+      "control": {
+        "n": 3,
+        "measures": {
+          "tbt": {
+            "min": 0,
+            "median": 0,
+            "max": 0
+          },
+          "lcp": {
+            "min": 907.25,
+            "median": 929.582,
+            "max": 940.476
+          },
+          "fcp": {
+            "min": 907.25,
+            "median": 929.582,
+            "max": 940.476
+          },
+          "requests": {
+            "min": 9,
+            "median": 9,
+            "max": 9
+          },
+          "transferBytes": {
+            "min": 44711,
+            "median": 44718,
+            "max": 44720
+          },
+          "thirdPartyBytes": {
+            "min": 0,
+            "median": 0,
+            "max": 0
+          },
+          "loadDelay": {
+            "min": 10.716000061035157,
+            "median": 10.961,
+            "max": 12.261999938964843
+          },
+          "renderDelay": {
+            "min": 33.821,
+            "median": 40.397,
+            "max": 44.773
+          },
+          "serverLatency": {
+            "min": 59.25,
+            "median": 70.58200000000001,
+            "max": 86.476
+          }
+        }
+      },
+      "gtm": {
+        "n": 3,
+        "measures": {
+          "tbt": {
+            "min": 14.5,
+            "median": 37,
+            "max": 43.99999999999977
+          },
+          "lcp": {
+            "min": 934.9819999999999,
+            "median": 938.355,
+            "max": 938.7850000000001
+          },
+          "fcp": {
+            "min": 934.9819999999999,
+            "median": 938.355,
+            "max": 938.7850000000001
+          },
+          "requests": {
+            "min": 10,
+            "median": 10,
+            "max": 10
+          },
+          "transferBytes": {
+            "min": 162931,
+            "median": 162931,
+            "max": 162954
+          },
+          "thirdPartyBytes": {
+            "min": 117896,
+            "median": 117896,
+            "max": 117896
+          },
+          "loadDelay": {
+            "min": 10.485,
+            "median": 11.075000061035157,
+            "max": 11.083
+          },
+          "renderDelay": {
+            "min": 34.52,
+            "median": 47.263,
+            "max": 110.91
+          },
+          "serverLatency": {
+            "min": 62.45299999999999,
+            "median": 65.09200000000003,
+            "max": 67.72999999999999
+          }
+        }
+      },
+      "gtm-deferred": {
+        "n": 3,
+        "measures": {
+          "tbt": {
+            "min": 30.999999999999773,
+            "median": 35,
+            "max": 37
+          },
+          "lcp": {
+            "min": 925.4019999999998,
+            "median": 941.458,
+            "max": 984.7189999999998
+          },
+          "fcp": {
+            "min": 925.4019999999998,
+            "median": 941.458,
+            "max": 942.7189999999998
+          },
+          "requests": {
+            "min": 10,
+            "median": 10,
+            "max": 10
+          },
+          "transferBytes": {
+            "min": 162858,
+            "median": 162859,
+            "max": 162882
+          },
+          "thirdPartyBytes": {
+            "min": 117896,
+            "median": 117896,
+            "max": 117896
+          },
+          "loadDelay": {
+            "min": 10.681,
+            "median": 11.680000061035157,
+            "max": 12.903
+          },
+          "renderDelay": {
+            "min": 33.675,
+            "median": 35.808,
+            "max": 37.975
+          },
+          "serverLatency": {
+            "min": 67.792,
+            "median": 70.61699999999999,
+            "max": 88.756
+          }
+        }
+      }
+    },
+    "costs": {
+      "gtm": {
+        "tbt": {
+          "delta": 37,
+          "real": true
+        },
+        "lcp": {
+          "delta": 8.773000000000025,
+          "real": false
+        },
+        "fcp": {
+          "delta": 8.773000000000025,
+          "real": false
+        },
+        "requests": {
+          "delta": 1,
+          "real": true
+        },
+        "transferBytes": {
+          "delta": 118213,
+          "real": true
+        },
+        "thirdPartyBytes": {
+          "delta": 117896,
+          "real": true
+        },
+        "loadDelay": {
+          "delta": 0.11400006103515636,
+          "real": false
+        },
+        "renderDelay": {
+          "delta": 6.866,
+          "real": false
+        },
+        "serverLatency": {
+          "delta": -5.489999999999981,
+          "real": false
+        }
+      },
+      "gtm-deferred": {
+        "tbt": {
+          "delta": 35,
+          "real": true
+        },
+        "lcp": {
+          "delta": 11.875999999999976,
+          "real": false
+        },
+        "fcp": {
+          "delta": 11.875999999999976,
+          "real": false
+        },
+        "requests": {
+          "delta": 1,
+          "real": true
+        },
+        "transferBytes": {
+          "delta": 118141,
+          "real": true
+        },
+        "thirdPartyBytes": {
+          "delta": 117896,
+          "real": true
+        },
+        "loadDelay": {
+          "delta": 0.7190000610351568,
+          "real": false
+        },
+        "renderDelay": {
+          "delta": -4.588999999999999,
+          "real": false
+        },
+        "serverLatency": {
+          "delta": 0.03499999999998238,
+          "real": false
+        }
+      }
+    },
+    "runs": [
+      {
+        "arm": "control",
+        "role": "warm-up",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161405Z.json",
+        "marks": []
+      },
+      {
+        "arm": "control",
+        "role": "round 1",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161418Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm",
+        "role": "round 1",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-20260903T161430Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm-deferred",
+        "role": "round 1",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-deferred-20260903T161444Z.json",
+        "marks": []
+      },
+      {
+        "arm": "control",
+        "role": "round 2",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161456Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm",
+        "role": "round 2",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-20260903T161509Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm-deferred",
+        "role": "round 2",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-deferred-20260903T161521Z.json",
+        "marks": []
+      },
+      {
+        "arm": "control",
+        "role": "round 3",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161533Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm",
+        "role": "round 3",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-20260903T161545Z.json",
+        "marks": []
+      },
+      {
+        "arm": "gtm-deferred",
+        "role": "round 3",
+        "report": "cartoons-environmental-undergraduate-emission.trycloudflare.com-arm-gtm-deferred-20260903T161558Z.json",
+        "marks": []
+      }
+    ]
+  }
+}

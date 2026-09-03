@@ -8,6 +8,7 @@ import http from 'node:http';
 import { gunzipSync } from 'node:zlib';
 import { after, before, test } from 'node:test';
 
+import { loadArms } from '../lib/arms.mjs';
 import { loadPage } from '../lib/page.mjs';
 
 const root = new URL('../', import.meta.url);
@@ -15,6 +16,7 @@ const IMMUTABLE = 'public, max-age=31536000, immutable';
 const gzip = { 'accept-encoding': 'gzip' };
 // The page model is the one parser of what the page references and links.
 const page = await loadPage(new URL('index.html', root));
+const arms = await loadArms();
 const pathOf = (relative) => '/' + relative.replace(/^\.\//, '');
 // The behaviour's current Generation, named by the page, so a bump moves every assertion at once.
 const behaviour = pathOf(page.scripts[0].attrs.src);
@@ -184,6 +186,8 @@ test('only the Storefront is public; the repository behind it is not', async () 
     '/server.py',
     '/CLAUDE.md',
     '/tests/performance-contract.mjs',
+    '/bench/arms.json',
+    '/bench/',
     `/reports/${report}`,
     '/../CONTEXT.md',
     '/%2e%2e/CONTEXT.md',
@@ -233,4 +237,26 @@ test('gzip is applied only when the client asks for it', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.headers['content-encoding'], undefined);
   assert.equal(res.body.toString('utf8'), (await file('index.html')).toString('utf8'));
+});
+
+test('every Arm is served as HTML, gzipped, never cached, and byte for byte the file on disk', async () => {
+  // The Arms (CONTEXT.md) are documents like /: revalidated on every request, never immutable.
+  const control = arms.arms.find((arm) => arm.name === 'control');
+  assert.equal(control.path, '/');
+  assert.equal(control.file, 'index.html');
+  const others = arms.arms.filter((arm) => arm.path !== '/');
+  assert.ok(others.length >= 2, 'the table names the two GTM Arms');
+  for (const arm of others) {
+    const res = await request(arm.path, { headers: gzip });
+    assert.equal(res.status, 200, arm.path);
+    assert.match(res.headers['content-type'], /^text\/html/, arm.path);
+    assert.equal(res.headers['content-encoding'], 'gzip', arm.path);
+    assert.equal(res.headers.vary, 'Accept-Encoding', arm.path);
+    assert.equal(res.headers['cache-control'], 'no-cache', arm.path);
+    assert.equal(gunzipSync(res.body).toString('utf8'), (await file(arm.file)).toString('utf8'), arm.path);
+    const head = await request(arm.path, { method: 'HEAD', headers: gzip });
+    assert.equal(head.status, 200, arm.path);
+    assert.equal(head.body.length, 0, arm.path);
+    assert.equal(head.headers['content-length'], res.headers['content-length'], arm.path);
+  }
 });

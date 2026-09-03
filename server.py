@@ -8,7 +8,8 @@ around the page, so results measured under any other server will not reproduce.
 Three tables decide everything the handler does. POLICY holds the facts about the bytes: a file's
 suffix maps to its content type and whether it is gzipped. PUBLIC and DIRECTORIES hold the facts
 about the URLs: PUBLIC is every single path a Run may fetch and how it is cached, DIRECTORIES the
-two folders whose flat-named files are public under one cache rule. Caching is a property of the
+two folders whose flat-named files are public under one cache rule. The Arms' rows are read from
+bench/arms.json at boot, so the table and the documents cannot drift. Caching is a property of the
 URL, not of the bytes, which is why it lives with the path: an Immutable Asset's filename is its
 cache key, and sw.js is the one script in the lab whose filename is deliberately not one -- a
 Worker registration is identified by its URL, so a Generation-stamped Worker would be a second
@@ -21,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 import gzip
+import json
 import re
 import sys
 
@@ -63,6 +65,14 @@ PUBLIC = {
     # The Worker: the one script whose filename is deliberately not a cache key (see the docstring).
     "/sw.js": (ROOT / "sw.js", NO_CACHE),
 }
+
+# The Arms (CONTEXT.md): the Storefront delivered with one way of loading the tags, each at its own
+# root-level URL, generated from index.html by tools/build-arms.mjs. bench/arms.json is the one home
+# of every Arm fact, so the rows come from it; they are documents, revalidated like /.
+ARMS = ROOT / "bench" / "arms.json"
+for _arm in json.loads(ARMS.read_text(encoding="utf-8"))["arms"]:
+    if _arm["path"] != "/":
+        PUBLIC[_arm["path"]] = (ROOT / _arm["file"], NO_CACHE)
 
 # URL directory -> (folder, suffixes, Cache-Control): a flat name (no separators) with one of the
 # suffixes is public under the folder; nothing else under the directory is, the index included.

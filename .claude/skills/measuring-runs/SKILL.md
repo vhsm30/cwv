@@ -141,3 +141,29 @@ bench, alternate control and variant through the one tunnel and repeat; a Win ne
 page a few minutes apart is what a tunnel looks like when nothing changed (2026-09-03T12:42 →
 12:47, one warm tunnel: LCP −59 ms, page share +7 ms, estimates −1 ms; 2026-08-21T17:13 → 17:26
 over ngrok: LCP +56 ms, page share −28 ms, estimates +19 ms).
+
+### The Bench
+
+`node tools/bench.mjs https://<host>/ --rounds 3` performs a warm-up Run of the control, then three
+rounds of every Arm in `bench/arms.json` (control, `gtm`, `gtm-deferred`), all through the one
+tunnel, back to back: ten Runs, about seven minutes. Every Run is the ordinary one — pre-flighted
+against the Arm's own file, checked, saved under `reports/` as `<host>-<arm>-<stamp>.json` — and a
+refusal stops the bench with its reason, the Reports so far kept. The record goes to
+`benches/<host>-<stamp>.json`; `node tools/bench.mjs read benches/<file>.json` recomputes the
+reading from the Reports it names and prints the `CLAUDE.md:` bench-of-record line to paste.
+
+The reading: per Arm and measure (TBT, LCP, FCP, requests, transferred, third-party bytes, load
+delay, render delay, server latency), min / median / max across the rounds, warm-up excluded. A cost
+is the difference of medians and is **real** only when the Arm's Runs and the control's do not
+overlap in the direction of the cost; otherwise it is within the wander. Two marks to read before
+anything else: `cold tunnel` (the server-latency artifact; the pre-flight should have prevented it)
+and `container not loaded` (an Arm Run whose Report holds no request to `www.googletagmanager.com`
+— for the deferred Arm, the idle callback landed outside the trace; stop and say so rather than
+widening the ceiling without a decision).
+
+Before the first Bench of a session: the container must be published (an unpublished container
+serves no `gtm.js`; `curl -sI "https://www.googletagmanager.com/gtm.js?id=GTM-PRVCQ335"` answers
+200 when it is), and the Measurement Server must be one started from the current tree, since an
+older `python server.py 8000` has no Arm rows and the pre-flight refuses every Arm with "answered
+404". Warming the Arms in a browser installs the Worker on that hostname like warming `/` does;
+warm with `curl` or let the pre-flight do it.

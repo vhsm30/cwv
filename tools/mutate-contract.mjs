@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // The Performance Contract's own check: can it still fail? Each mutation below breaks one thing an
 // assertion guards (or, for the rows marked "passes", changes something harmless). One of the
-// three files the contract reads — the page, the manifest, the Worker — is mutated in place, the
-// contract is run, and the file is restored; a crash mid-way is undone by `git checkout .`. Add a
+// files the contract and the Bench's assertions read — the page, the manifest, the Worker, an Arm,
+// the Arms table — is mutated in place, the contract is run, and the file is restored; a crash
+// mid-way is undone by `git checkout .`. Add a
 // row whenever you add an assertion: a new assertion that no mutation can fail is documentation,
 // not Lock-in — and apply the test while designing the assertion, since one that restates the
 // markup it guards cannot fail.
@@ -11,13 +12,14 @@
 //
 // M1-M16 are the table from the architecture review of 2026-08-24 (BACKLOG.md, B1); before the
 // contract read the page through lib/page.mjs, M5, M6, M10, M14, M15 and M16 passed unnoticed and
-// M7 and M8 failed for no reason. M17-M34 came with the PWA of 2026-09-02.
+// M7 and M8 failed for no reason. M17-M34 came with the PWA of 2026-09-02; M35-M38 with the Bench
+// of 2026-09-03.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const FILES = ['index.html', 'manifest.webmanifest', 'sw.js'];
+const FILES = ['index.html', 'manifest.webmanifest', 'sw.js', 'arm-gtm.html', 'arm-gtm-deferred.html', 'bench/arms.json'];
 const paths = Object.fromEntries(FILES.map((file) => [file, fileURLToPath(new URL(`../${file}`, import.meta.url))]));
 const originals = Object.fromEntries(FILES.map((file) => [file, readFileSync(paths[file], 'utf8')]));
 
@@ -30,6 +32,10 @@ const swapAll = (needle, replacement) => (text, file) => must(text, needle, file
 const page = (name, mutate, expected) => ({ name, file: 'index.html', mutate, expected });
 const manifest = (name, mutate, expected) => ({ name, file: 'manifest.webmanifest', mutate, expected });
 const worker = (name, mutate, expected) => ({ name, file: 'sw.js', mutate, expected });
+const arm = (name, mutate, expected) => ({ name, file: 'arm-gtm.html', mutate, expected });
+const table = (name, mutate, expected) => ({ name, file: 'bench/arms.json', mutate, expected });
+// The container id, read from the table rather than written here, so a new container moves the rows.
+const containerId = JSON.parse(originals['bench/arms.json']).container.id;
 
 const mutations = [
   page('M1 preload imagesrcset drifts from the <source>', (h, f) => must(h, 'imagesrcset=', f).replace(/\.\/images\/hero-768\.webp 768w/, './images/hero-768.webp 770w'), 'caught'),
@@ -38,8 +44,13 @@ const mutations = [
   page('M4 fetchpriority="low" removed', swapAll(' fetchpriority="low"', ''), 'caught'),
   page('M5 .eyebrow stops using --accent', swap('.eyebrow{color:var(--accent);', '.eyebrow{color:var(--muted);'), 'caught'),
   page('M6 hero src -> https://cdn.example.com/', (h, f) => must(h, 'src="./images/hero', f).replace(/src="\.\/images\/hero[^"]*\.jpg"/, 'src="https://cdn.example.com/hero.jpg"'), 'caught'),
-  page('M7 harmless: as= before rel= on the preload', swap('<link rel="preload" as="image"', '<link as="image" rel="preload"'), 'passes'),
-  page('M8 harmless: single-quoted fetchpriority', swapAll('fetchpriority="low"', "fetchpriority='low'"), 'passes'),
+  // M7 and M8 were harmless to the Performance Contract alone (the page model reads attribute order
+  // and quote style the same either way); since the Bench of 2026-09-03 the contract also runs
+  // tests/bench.mjs, whose Arm-identity check compares buildArm(index.html) to the committed Arms
+  // byte for byte, so any change to index.html now requires node tools/build-arms.mjs — including
+  // these two. That is CLAUDE.md's own rule, asserted, not a flaw in the check.
+  page('M7 as= before rel= on the preload (index.html changed, Arms not rebuilt)', swap('<link rel="preload" as="image"', '<link as="image" rel="preload"'), 'caught'),
+  page('M8 single-quoted fetchpriority (index.html changed, Arms not rebuilt)', swapAll('fetchpriority="low"', "fetchpriority='low'"), 'caught'),
   page('M9 hero gains loading="lazy"', swap('alt="A charcoal floor lamp', 'loading="lazy" alt="A charcoal floor lamp'), 'caught'),
   page('M10 mobile .hero-image gains height:300px', swap('.hero-image{aspect-ratio:1/1;min-height:0}', '.hero-image{aspect-ratio:1/1;min-height:0;height:300px}'), 'caught'),
   page('M11 <source sizes> != <img sizes>', swap('sizes="(max-width: 700px) 45vw, 30vw">', 'sizes="(max-width: 700px) 45vw, 33vw">'), 'caught'),
@@ -70,9 +81,18 @@ const mutations = [
   worker('M32 clients.claim() is added at activate', swap("self.addEventListener('activate', (event) => {", "self.addEventListener('activate', (event) => {\n  event.waitUntil(self.clients.claim());"), 'caught'),
   worker('M33 skipWaiting() is called at install', swap("self.addEventListener('install', (event) => {", "self.addEventListener('install', (event) => {\n  self.skipWaiting();"), 'caught'),
   worker('M34 harmless: Shell entries reordered', swap("['./', './app.v2.min.js', './favicon.ico']", "['./favicon.ico', './', './app.v2.min.js']"), 'passes'),
+  // The Bench of 2026-09-03: the Arms are the generator applied to the control, and nothing else.
+  arm('M35 the head snippet is removed from the head Arm', (h, f) => must(h, "'dataLayer','" + containerId, f).replace(/\n  <script>\(function\(w,d,s,l,i\)[\s\S]*?<\/script>/, ''), 'caught'),
+  arm('M36 the container id changes in one Arm only', swapAll(containerId, 'GTM-0000000'), 'caught'),
+  arm('M37 the head snippet moves below the stylesheet', (h, f) => {
+    const match = /\n  <script>\(function\(w,d,s,l,i\)[\s\S]*?<\/script>/.exec(must(h, "'dataLayer','" + containerId, f));
+    return h.replace(match[0], '').replace('</head>', `${match[0].trim()}\n</head>`);
+  }, 'caught'),
+  table('M38 the table names a new container without a rebuild', swap(`"id": "${containerId}"`, '"id": "GTM-0000000"'), 'caught'),
 ];
 
-const contract = () => spawnSync(process.execPath, ['--test', 'tests/performance-contract.mjs'], { cwd: root, encoding: 'utf8' });
+// The Performance Contract and the Bench's assertions together: an Arm row can only fail the latter.
+const contract = () => spawnSync(process.execPath, ['--test', 'tests/performance-contract.mjs', 'tests/bench.mjs'], { cwd: root, encoding: 'utf8' });
 
 if (contract().status !== 0) {
   console.error('the contract is not green on the unmutated files; fix that first');

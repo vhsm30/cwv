@@ -28,18 +28,22 @@ python server.py 8000                              # the Measurement Server at h
 node tools/run.mjs https://<name>.trycloudflare.com/   # perform a Run: pre-flight (resolve, warm, read the document), measure, save the Report, print the summary
 node tools/run.mjs reports/<file>.json             # print a recorded Report's summary and its CLAUDE.md current-state line
 node tools/run.mjs compare <earlier>.json <later>.json   # a Paired Run read side by side: every delta, and whose the LCP difference is
-node --test "tests/**/*.mjs"                       # every assertion: Performance Contract, Measurement Server, Run
+node tools/bench.mjs https://<name>.trycloudflare.com/ --rounds 3   # a Bench: a warm-up Run of the control, then 3 rounds of every Arm through the one Preview URL; writes benches/<host>-<stamp>.json
+node tools/bench.mjs read benches/<file>.json      # recompute a Bench's reading from the Reports it names, and its CLAUDE.md bench-of-record line
+node --test "tests/**/*.mjs"                       # every assertion: Performance Contract, Measurement Server, Run, Bench
 node --test tests/performance-contract.mjs         # the Performance Contract alone (page + images)
 node --test tests/measurement-server.mjs           # the Measurement Server alone (spawns python server.py 0)
 node --test tests/run.mjs                          # the Run alone (recorded Reports, no tunnel or Chrome)
+node --test tests/bench.mjs                        # the Bench alone: the Arms table, the generated Arms, the reading, the record
 node --test --test-name-pattern="lazy" tests/performance-contract.mjs   # one assertion
-node tools/mutate-contract.mjs                     # prove the contract can still fail (34 mutations of the page, the manifest, the Worker)
+node tools/mutate-contract.mjs                     # prove the contract can still fail (38 mutations of the page, the manifest, the Worker, an Arm, the Arms table)
 python tools/build-images.py                       # rebuild every Rung from the Masters per images/slots.json
 python tools/build-icons.py                        # rebuild every icon and screenshot in icons/ from manifest.webmanifest
+node tools/build-arms.mjs                          # rebuild every Arm document from index.html per bench/arms.json
 ```
 
 `node --test tests/` fails — the filenames do not match Node's default test glob. Quote the glob
-above, or pass a file path. `lib/` holds the modules the assertions and the Run share; it is not a
+above, or pass a file path. `lib/` holds the modules the assertions, the Run and the Bench share; it is not a
 test directory.
 
 ### Measuring
@@ -53,7 +57,8 @@ running `node tools/run.mjs`.
 **`server.py` is part of the optimization, not scaffolding.** It is the Measurement Server: a
 `POLICY` table (suffix → content type, gzip: facts about the bytes), a `PUBLIC` table (path → file,
 cache: facts about the URL — `/`, the behaviour's current Generation, the favicon, `robots.txt`,
-`llms.txt`, `manifest.webmanifest`, `sw.js`) and a `DIRECTORIES` table (`/images/*.{webp,jpg}`,
+`llms.txt`, `manifest.webmanifest`, `sw.js`, plus one row per Arm read from `bench/arms.json` at
+boot) and a `DIRECTORIES` table (`/images/*.{webp,jpg}`,
 `/icons/*.png`). Immutable Assets are served with `max-age=1y, immutable`; the document, the crawler
 files, the manifest and `sw.js` are `no-cache` — `sw.js` on purpose: a Worker registration is
 identified by its URL, so a Generation-stamped Worker would be a second registration, not a
@@ -105,6 +110,25 @@ The Notice ships `hidden` with `[hidden]{display:none!important}` and `position:
 sees it and revealing it shifts nothing. A Report shows nothing of the Worker: the registration and
 the Shell's fetches happen in the Worker's own context, which the Report does not record — what it
 does record is the manifest and the one icon Chrome fetches after reading it.
+
+**`bench/arms.json` is the one home of every Arm fact**, as `images/slots.json` is for images: the
+container (`GTM-PRVCQ335`, the user's own, and a prose note of what it holds) and the three Arms —
+the control (`/`, `index.html`), `gtm` (`/arm-gtm.html`, Google's standard snippet at the top of
+the head) and `gtm-deferred` (`/arm-gtm-deferred.html`, the container after `load` when idle, with
+a one-second ceiling). `tools/build-arms.mjs` derives each Arm document from `index.html` by
+inserting exactly that delivery's snippet, byte-identically on rebuild; `lib/arms.mjs` is the
+table's one reader for the Run, the bench and the assertions; `server.py` reads it in Python. The
+Performance Contract keeps holding for `index.html` alone; `tests/bench.mjs` holds every Arm equal
+to the generator applied to the control on disk, so a change to `index.html` demands a rebuild, as
+a Master's demands its Rungs. A Run of an Arm is pre-flighted against the Arm's own file, refused
+when the Report's path is another Arm's, and named `<host>-<arm>-<stamp>.json`; its summary
+accounts for every third party by origin. The Bench (`tools/bench.mjs`) performs a warm-up Run of
+the control, then rounds of every Arm through one Preview URL, and its reading gives each Arm min /
+median / max per measure with the cost against the control called real only when the Arm's Runs
+and the control's do not overlap — the control's own spread in the same session is the floor, never
+a quoted threshold. Two marks: a cold-tunnel Run, and an Arm Run whose Report holds no request to
+`www.googletagmanager.com` (the container never loaded). The record under `benches/` names the
+Reports; `read` recomputes the reading from them.
 
 `picture{display:contents}` is load-bearing: without it the `<picture>` becomes the grid/flex item
 instead of the `<img>`, and every `.hero-image`/`.product-image` rule stops applying. It must be paired
@@ -160,13 +184,17 @@ cannot fail, and it is easiest to propose one in the same breath as the feature 
 **`reports/` holds the Reports**, named `<host>-<UTC fetchTime>Z.json` by the Run itself. See the
 `measuring-runs` skill for how to read one back.
 
-Current state (Run of 2026-09-03T12:47:21Z through a warm Cloudflare quick tunnel, the third of
-the day through it): performance 100 / accessibility 100 / best-practices 100 / SEO 100, FCP =
-LCP = 947 ms, TBT 0, CLS 0, 9 requests, 43.7 KB transferred; WebP arrives as `image/webp`, the
-script and the manifest gzipped, no robots-txt artifact, and `deprecations`, `inspector-issues`
-and `errors-in-console` all empty. The summary splits LCP into the Page share (load delay 11 ms,
-render delay 58 ms, the 6.5 KB `hero-768.webp`) and the Tunnel share (TTFB 145 ms, load duration
-76 ms, Lantern's server latency 58 ms and RTT 20 ms). The three Runs of that day are the first
+Current state (Run of 2026-09-03T16:15:33Z through a warm Cloudflare quick tunnel, the control's
+third round of that day's Bench): performance 100 / accessibility 100 / best-practices 100 / SEO
+100, FCP = LCP = 907 ms, TBT 0, CLS 0, 9 requests, 43.7 KB transferred; WebP arrives as
+`image/webp`, the script and the manifest gzipped, no robots-txt artifact, and `deprecations`,
+`inspector-issues` and `errors-in-console` all empty. The summary splits LCP into the Page share
+(load delay 12 ms, render delay 45 ms; the LCP image itself printed unresolved this Run — the
+breakdown's `src` snippet truncates to a two-character prefix that this tunnel's unusually long
+hostname makes ambiguous across all four Rungs under `images/`, though `network-requests` still
+names `hero-768.webp` at 6,746 B as what was fetched; recorded as D25) and the Tunnel share (TTFB
+148 ms, load duration 88 ms, Lantern's server latency 59 ms and RTT 23 ms). The three Runs of that
+2026-09-03T12:40–12:47Z tunnel session are the first
 Paired Runs: 2026-09-03T12:40:10Z, after one warming GET, read LCP 1177 ms with a load duration of
 350 ms, a server-latency estimate of 266 ms (the summary names it a known artifact) and a render
 delay of 131 ms, the first Chrome of the session; 12:42:08Z, after the pre-flight had fetched every
@@ -188,6 +216,20 @@ the Page share, which the Tunnel cannot move; load duration, TTFB and Lantern's 
 Tunnel share, and two Runs of one page differ there first. A Win has to clear the wander, so it
 needs the `page` (or `image`) verdict on every repeat, not on one pair.
 
+Bench of record (benches/cartoons-environmental-undergraduate-emission.trycloudflare.com-20260903T161359Z.json,
+2026-09-03T16:13:59Z, 3 rounds, GTM-PRVCQ335: empty: no tags, no triggers; five built-in variables.
+Published as the floor under any container.): control medians TBT 0 ms, LCP 930 ms, 9 requests,
+43.7 KB; gtm: TBT +37 ms (real) · LCP +9 ms (within the wander) · requests +1 (real) · transferred
++115.4 KB (real) · third-party bytes +115.1 KB (real); gtm-deferred: TBT +35 ms (real) · LCP +12 ms
+(within the wander) · requests +1 (real) · transferred +115.4 KB (real) · third-party bytes
++115.1 KB (real). Ten Runs, no marks — neither Arm's container missed Lighthouse's trace, and the
+pre-flight kept every round off the cold-tunnel artifact. What is real for both Arms, whether the
+snippet sits in the head or waits for an idle callback after load: one more request, the
+container's own transfer weight, and TBT; LCP and FCP moved by less than the control's own
+round-to-round spread for both, so an empty container is not yet shown to cost paint. This is the
+floor — `GTM-PRVCQ335` holds no tags — so every later Bench is read against a container that,
+unlike this one, actually does something.
+
 ## Change guidelines
 
 - Keep the Storefront framework-free and dependency-free unless a migration is explicitly requested.
@@ -198,6 +240,9 @@ needs the `page` (or `image`) verdict on every repeat, not on one pair.
 - Image facts change in `images/slots.json` first; then rebuild with `tools/build-images.py` and
   update the markup until the contract is green. Icon facts change in `manifest.webmanifest` first;
   then rebuild with `tools/build-icons.py`.
+- Arm facts change in `bench/arms.json` first; then rebuild with `node tools/build-arms.mjs`. Any
+  change to `index.html` rebuilds the Arms (asserted). The container is the user's own; what it
+  holds is written in the table's `holds` note whenever it changes, and every bench record copies it.
 - A new Generation of the behaviour is a new filename: the `<script src>`, the `PUBLIC` row, the
   `SHELL` entry and the cache name in `sw.js` move together (the contract ties the last two to the
   first), and the superseded file stays on disk, unserved, asserted 404. `sw.js` itself is never

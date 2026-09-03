@@ -7,6 +7,7 @@ import path from 'node:path';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { loadArms } from '../lib/arms.mjs';
 import { loadPage } from '../lib/page.mjs';
 import { checkReport, compare, formatComparison, formatCurrentState, formatSummary, readReport, reportName, summarize } from '../lib/report.mjs';
 import { RunRefused, fetchPreflight, performRun, recordedMeasure } from '../tools/run.mjs';
@@ -46,6 +47,8 @@ const noPreflight = async () => [];
 const INDEX_URL = new URL('../index.html', import.meta.url);
 const INDEX = await readFile(INDEX_URL, 'utf8');
 const page = await loadPage(INDEX_URL);
+const arms = await loadArms();
+const armDocument = async (name) => readFile(new URL(arms.arms.find((arm) => arm.name === name).file, new URL('../', import.meta.url)), 'utf8');
 const servers = [];
 const serve = async (handler) => {
   const server = http.createServer(handler);
@@ -87,6 +90,27 @@ test('a Report is named for the Preview URL host and its own UTC moment of captu
     reportName({ requestedUrl: PREVIEW_URL, fetchTime: '2026-08-21T17:26:57.067Z' }),
     'pending-cozily-viscous.ngrok-free.dev-20260821T172657Z.json',
   );
+});
+
+test("a Report of an Arm carries the Arm's slug between the host and the moment", () => {
+  assert.equal(
+    reportName({ requestedUrl: 'https://pending-cozily-viscous.ngrok-free.dev/arm-gtm.html', fetchTime: '2026-08-21T17:26:57.067Z' }),
+    'pending-cozily-viscous.ngrok-free.dev-arm-gtm-20260821T172657Z.json',
+  );
+  assert.equal(
+    reportName({ requestedUrl: 'https://x.trycloudflare.com/arm-gtm-deferred.html', fetchTime: '2026-09-04T10:00:00.000Z' }),
+    'x.trycloudflare.com-arm-gtm-deferred-20260904T100000Z.json',
+  );
+});
+
+test('a Report of another Arm is not a Run of this Preview URL', () => {
+  const fake = structuredClone(reference.report);
+  fake.requestedUrl = `${PREVIEW_URL}arm-gtm.html`;
+  fake.mainDocumentUrl = fake.requestedUrl;
+  fake.finalDisplayedUrl = fake.requestedUrl;
+  const reasons = checkReport(fake, PREVIEW_URL);
+  assert.ok(reasons.some((r) => /wrong Arm/.test(r) && r.includes('/arm-gtm.html')), reasons.join('\n'));
+  assert.deepEqual(checkReport(fake, fake.requestedUrl), [], 'against its own URL it is a real Run');
 });
 
 test('every recorded Report is a real Run of its own Preview URL', () => {
@@ -224,6 +248,47 @@ test('the Page share names the Rung the LCP element loaded and its bytes', () =>
   const first = summarize(oldest.report).pageShare;
   assert.ok(first.lcpUrl?.includes('images.unsplash.com'), String(first.lcpUrl));
   assert.ok(first.lcpBytes > 0);
+});
+
+// A Report of a GTM Arm: the control's requests plus what the container pulls in.
+const withContainer = (report) => {
+  const fake = structuredClone(report);
+  fake.audits['network-requests'].details.items.push(
+    { url: 'https://www.googletagmanager.com/gtm.js?id=GTM-PRVCQ335', statusCode: 200, mimeType: 'application/javascript', resourceType: 'Script', transferSize: 70000, resourceSize: 210000 },
+    { url: 'https://www.googletagmanager.com/gtag/js?id=G-TEST', statusCode: 200, mimeType: 'application/javascript', resourceType: 'Script', transferSize: 1200, resourceSize: 3000 },
+    { url: 'https://www.google-analytics.com/g/collect?v=2', statusCode: 204, mimeType: '', resourceType: 'XHR', transferSize: 300, resourceSize: 0 },
+  );
+  return fake;
+};
+
+test('the summary accounts for every third party by origin, and says none on the control', () => {
+  const clean = summarize(reference.report).thirdParty;
+  assert.deepEqual(clean, { requests: 0, transferBytes: 0, origins: {} });
+  const tagged = summarize(withContainer(reference.report)).thirdParty;
+  assert.equal(tagged.requests, 3);
+  assert.equal(tagged.transferBytes, 71500);
+  assert.deepEqual(Object.keys(tagged.origins), ['www.googletagmanager.com', 'www.google-analytics.com']);
+  assert.deepEqual(tagged.origins['www.googletagmanager.com'], { requests: 2, transferBytes: 71200 });
+  // The oldest Report's Hero came from Unsplash: a third party the account names, as it should.
+  assert.ok('images.unsplash.com' in summarize(oldest.report).thirdParty.origins);
+});
+
+test('the printed summary carries the third parties on one line', () => {
+  assert.match(formatSummary(summarize(reference.report)), /^  third parties: none$/m);
+  const line = formatSummary(summarize(withContainer(reference.report))).split('\n').find((l) => l.startsWith('  third parties:'));
+  assert.equal(line, '  third parties: 3 requests · 69.8 KB (www.googletagmanager.com, www.google-analytics.com)');
+});
+
+test('a comparison of two documents through one Preview URL says so', () => {
+  const arm = structuredClone(reference.report);
+  arm.requestedUrl = `${PREVIEW_URL}arm-gtm.html`;
+  arm.mainDocumentUrl = arm.requestedUrl;
+  arm.finalDisplayedUrl = arm.requestedUrl;
+  const comparison = compare(reference.report, arm);
+  assert.equal(comparison.samePreviewUrl, true);
+  assert.equal(comparison.sameDocument, false);
+  assert.match(formatComparison(comparison), /^Two Arms through one Preview URL: /);
+  assert.equal(compare(reference.report, reference.report).sameDocument, true);
 });
 
 test('a Report is honest about a breakdown it does not carry', () => {
@@ -491,6 +556,46 @@ test("the pre-flight accepts the Storefront's own document", async () => {
   assert.deepEqual(await fetchPreflight(await serve(html(INDEX))), []);
 });
 
+test('the pre-flight accepts an Arm against its own document on disk, and warms its same-origin assets', async () => {
+  const gtm = await armDocument('gtm');
+  const requested = new Map();
+  const origin = await serve((req, res) => {
+    requested.set(req.url, (requested.get(req.url) ?? 0) + 1);
+    if (req.url === '/arm-gtm.html') return html(gtm)(req, res);
+    if (req.url === '/') return html(INDEX)(req, res);
+    res.writeHead(200, { 'content-type': 'application/octet-stream' });
+    res.end('bytes');
+  });
+  assert.deepEqual(await fetchPreflight(`${origin}arm-gtm.html`), []);
+  assert.equal(requested.get('/arm-gtm.html'), 1);
+  for (const asset of page.assets) {
+    assert.ok(requested.has(new URL(asset, origin).pathname), `${asset} was not warmed`);
+  }
+});
+
+test('the pre-flight refuses an Arm URL that serves a different document than the Arm on disk', async () => {
+  // An older Measurement Server without the Arm rows answers 404 (refused as "not 200"); a misrouted
+  // one answers the control. The served bytes must be the Arm's file, byte for byte.
+  const origin = await serve(html(INDEX));
+  const [reason, ...rest] = await fetchPreflight(`${origin}arm-gtm.html`);
+  assert.deepEqual(rest, []);
+  assert.match(reason, /not the Arm on disk/);
+  assert.ok(reason.includes('arm-gtm.html'), reason);
+});
+
+test('the pre-flight refuses a path the Arms table does not name, before any request', async () => {
+  const requested = [];
+  const origin = await serve((req, res) => {
+    requested.push(req.url);
+    html(INDEX)(req, res);
+  });
+  const [reason, ...rest] = await fetchPreflight(`${origin}nope.html`);
+  assert.deepEqual(rest, []);
+  assert.match(reason, /not an Arm/);
+  assert.ok(reason.includes('/arm-gtm.html'), reason);
+  assert.deepEqual(requested, []);
+});
+
 test('the pre-flight warms every asset the page references, not only the document', async () => {
   // One GET is not enough for a fresh quick tunnel: the Run of 2026-09-03T12:40:10Z followed one
   // and still read a 266 ms server-latency estimate, because Chrome's parallel requests took paths
@@ -593,16 +698,19 @@ test("a Report's current-state line is the figures CLAUDE.md quotes, in its word
   );
 });
 
-test("CLAUDE.md's current state is the newest Report, quoted in the line the command prints", async () => {
-  // D12: the paragraph is pasted from `node tools/run.mjs reports/<newest>.json`, never composed.
-  // Whitespace is collapsed because the paragraph wraps.
+test("CLAUDE.md's current state is the newest Report of the control, quoted in the line the command prints", async () => {
+  // D12: the paragraph is pasted from `node tools/run.mjs reports/<newest control>.json`, never
+  // composed. The control, because after a Bench the newest Report is usually an Arm's, and the
+  // current state is the Storefront's. Whitespace is collapsed because the paragraph wraps.
   const claude = (await readFile(new URL('../CLAUDE.md', import.meta.url), 'utf8')).replace(/\s+/g, ' ');
   const cited = /Current state \(Run of (\S+Z)/.exec(claude);
   assert.ok(cited, 'CLAUDE.md cites no Run as its current state');
-  const newest = recorded.reduce((a, b) => (a.report.fetchTime > b.report.fetchTime ? a : b)).report;
-  assert.equal(cited[1], newest.fetchTime.replace(/\.\d+Z$/, 'Z'), 'CLAUDE.md cites a Run that is not the newest Report');
+  const controls = recorded.filter(({ report }) => new URL(report.requestedUrl).pathname === '/');
+  assert.ok(controls.length > 0);
+  const newest = controls.reduce((a, b) => (a.report.fetchTime > b.report.fetchTime ? a : b)).report;
+  assert.equal(cited[1], newest.fetchTime.replace(/\.\d+Z$/, 'Z'), 'CLAUDE.md cites a Run that is not the newest Report of the control');
   const line = formatCurrentState(summarize(newest));
-  assert.ok(claude.includes(line), `CLAUDE.md does not quote the newest Report's line verbatim:\n${line}`);
+  assert.ok(claude.includes(line), `CLAUDE.md does not quote the newest control Report's line verbatim:\n${line}`);
 });
 
 test('the command compares two recorded Reports without measuring anything', () => {

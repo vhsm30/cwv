@@ -4,9 +4,10 @@
 //
 //     node tools/run.mjs https://<name>.trycloudflare.com/
 //
-// Before Chrome launches, a pre-flight (fetchPreflight) resolves the hostname directly at the
-// configured DNS servers, fetches the document and reads it against the page on disk, and then
-// warms the tunnel by fetching every asset the page references, so a hostname that has not
+// Before Chrome launches, a pre-flight (fetchPreflight) names the Arm from the path (bench/arms.json),
+// resolves the hostname directly at the configured DNS servers, fetches the document and reads it
+// against the Arm's file on disk, and then warms the tunnel by fetching every asset the page
+// references, so a hostname that has not
 // propagated or a stale Measurement Server is refused in seconds rather than after a full
 // Lighthouse pass, and the Run does not measure the tunnel waking up. The measurement carries ngrok's bypass header: free-tier
 // ngrok answers browser user-agents with an interstitial unless it is present, and every other
@@ -24,11 +25,11 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
+import { ROOT_URL, armForPath, loadArms } from '../lib/arms.mjs';
 import { loadPage, parsePage } from '../lib/page.mjs';
 import { checkReport, compare, formatComparison, formatCurrentState, formatSummary, previewUrlProblem, reportName, summarize } from '../lib/report.mjs';
 
 const REPORTS_DIR = fileURLToPath(new URL('../reports/', import.meta.url));
-const INDEX_URL = new URL('../index.html', import.meta.url);
 const BYPASS_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
 const CATEGORIES = 'performance,accessibility,best-practices,seo';
 // Asks the configured DNS servers directly (c-ares), bypassing the Windows cache that `curl` reads
@@ -39,12 +40,15 @@ const resolver = new dns.Resolver({ timeout: 3000, tries: 2 });
 const dnsProblem = (hostname, code) =>
   `${hostname} does not resolve (${code}) at the configured DNS servers, asked directly rather than through the Windows cache: a fresh quick-tunnel hostname that has not propagated, or a resolver holding a poisoned answer — start a new tunnel rather than waiting out the TTL (measuring-runs, "A fresh hostname and DNS")`;
 
-// The pre-flight: every reason to refuse before Chrome launches, or empty. One DNS query, one GET
-// of the document read through the page model against the page on disk, and then the warming: a
-// fresh quick tunnel answers its first request in ~1.4 s and the next in ~0.2 s, and a Run taken
-// cold records the tunnel waking up as the page's LCP.
+// The pre-flight: every reason to refuse before Chrome launches, or empty. The path names the Arm
+// (bench/arms.json), one DNS query, one GET of the document read against the Arm's file on disk,
+// and then the warming: a fresh quick tunnel answers its first request in ~1.4 s and the next in
+// ~0.2 s, and a Run taken cold records the tunnel waking up as the page's LCP.
 export async function fetchPreflight(url) {
-  const { hostname } = new URL(url);
+  const { hostname, pathname, origin } = new URL(url);
+  const table = await loadArms();
+  const arm = armForPath(table, pathname);
+  if (!arm) return [`${pathname} is not an Arm: bench/arms.json names ${table.arms.map((a) => a.path).join(', ')}`];
   if (!net.isIP(hostname)) {
     try {
       await resolver.resolve4(hostname);
@@ -61,8 +65,9 @@ export async function fetchPreflight(url) {
     return [`could not reach ${url} (${code})`];
   }
   if (response.status !== 200) return [`the document at ${url} answered ${response.status}, not 200`];
-  const served = parsePage(await response.text(), url);
-  const expected = await loadPage(INDEX_URL);
+  const servedHtml = await response.text();
+  const served = parsePage(servedHtml, url);
+  const expected = await loadPage(new URL(arm.file, ROOT_URL));
   if (served.title !== expected.title) {
     return [`the document at ${url} is not the Storefront's: its title is "${served.title}" against "${expected.title}"`];
   }
@@ -73,15 +78,24 @@ export async function fetchPreflight(url) {
       `the document at ${url} is not the Storefront on disk: it references ${extra.join(', ') || 'nothing'} where the page on disk references ${missing.join(', ') || 'nothing'} — an older Measurement Server still listening?`,
     ];
   }
+  // An Arm differs from the control by a snippet the page model does not see as an asset, so the
+  // Arm's bytes are compared whole: a misrouted server answering the control here would measure it.
+  if (arm.delivery !== 'none' && servedHtml !== expected.html) {
+    return [`the document at ${url} is not the Arm on disk (${arm.file}): the served bytes differ — an older Measurement Server still listening?`];
+  }
   // Warm the paths the Run's Chrome will take, in parallel, the way the page loads: one GET is not
   // enough for a fresh quick tunnel (the Run of 2026-09-03T12:40:10Z followed one and still read a
-  // 266 ms server-latency estimate). Best effort — a missing asset is the Run's to record.
+  // 266 ms server-latency estimate). Same-origin only: the container is not ours to warm. Best
+  // effort — a missing asset is the Run's to record.
   await Promise.all(
-    expected.assets.map((asset) =>
-      fetch(new URL(asset, url), { headers: BYPASS_HEADERS })
-        .then((r) => r.arrayBuffer())
-        .catch(() => undefined),
-    ),
+    expected.assets
+      .map((asset) => new URL(asset, url))
+      .filter((target) => target.origin === origin)
+      .map((target) =>
+        fetch(target, { headers: BYPASS_HEADERS })
+          .then((r) => r.arrayBuffer())
+          .catch(() => undefined),
+      ),
   );
   return [];
 }
