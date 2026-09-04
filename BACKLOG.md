@@ -737,7 +737,7 @@ absorbed, recorded here so the evolution pays the backlog down instead of orphan
 | D14 canonical · D15 Open Graph · D17 nav below 700px · D18 `#story` nesting | P2 (Routes) — **built** | Each is a property of a document a generator would write once |
 | D23 validators for `no-cache` | P2 (Routes), beside B7 — **built** | Both are what a repeat view costs, which nothing measures yet |
 
-Unassigned and Open: D11, D13, D16, D19, D20, D21, D24, D25. The two Set-aside items premised on
+Unassigned and Open: D11, D13, D16, D19, D20, D21, D24, D25, D31. The two Set-aside items premised on
 one URL — no per-Product URLs and a sitemap (`## Set aside on 2026-08-27`) — are still set aside,
 now with a date to revisit: whenever P3 lands a second Route.
 
@@ -922,6 +922,34 @@ harness reads. Not a repository-wide `text=auto`: that renormalises every file i
 would bury the diff of whatever round adds it. Worth pairing with a guard in the harness itself, so
 a needle that matches nothing fails the row instead of passing it, and with correcting the header's
 `git checkout .` advice to `git show HEAD:<path>`.
+
+### D31 · Two observations disagree about whether the ETag survives a Cloudflare quick tunnel · Open
+
+**Problem.** Task 11's Step 3 checked the ETag live and recorded that Cloudflare strips it: through
+the tunnel the document came back with `Cache-Control`, `Vary` and `CF-Cache-Status: DYNAMIC` and no
+`ETag` at all, not even a substituted one. The Reports from the same tunnel say the opposite. If no
+validator reaches the browser, no Repeat Visit through a quick tunnel can ever revalidate, and
+`server.py`'s 304 is unobservable outside `tests/measurement-server.mjs` — which changes what a
+Repeat Visit is able to measure at all. Nothing here resolves it, and CLAUDE.md deliberately states
+only the local behaviour, which the test owns.
+
+**Evidence.** `manifest.webmanifest` is served `no-cache` and its body is byte-identical across the
+change (`resourceSize` 1148 in every Report on disk). Its `transferSize` reads 593-595 B in all
+eleven Reports of 2026-09-02 and 2026-09-03, and 648 B in all four of 2026-09-04, the first day
+`server.py` carried `25096ab`. That is +53 B on a row whose body did not move, against the 79 raw
+bytes of the header `server.py:145` writes — the shape of an HPACK-compressed `ETag` arriving. The
+contrary observation is a `curl -sI` through the tunnel, recorded in this session's ledger, showing
+no `ETag` on the document.
+
+**Shape.** The two checks differ in more than one way, so the first step is to stop confounding them:
+`curl -sI` is a HEAD without `Accept-Encoding: gzip`, where Chrome sends GET and accepts gzip, and
+`server.py` builds a different tag per representation. Repeat the check as a GET with the encoding
+Chrome asks for, on the same tunnel, and read the response headers rather than inferring from bytes.
+If Cloudflare passes the validator on GET and drops it on HEAD, the observation is an artifact of the
+check and D31 closes; if it strips both, the +53 B belongs to something else and the current-state
+paragraph's attribution needs revisiting. Either way a `no-cache` row's headers should be read once,
+directly, rather than argued from `transferSize` — which is CLAUDE.md's own rule about reading cost
+from a Report applied to a header instead of a body.
 
 ## Set aside on 2026-08-27
 

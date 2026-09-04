@@ -65,7 +65,13 @@ boot) and a `DIRECTORIES` table (`/images/*.{webp,jpg}`,
 `/icons/*.png`). Immutable Assets are served with `max-age=1y, immutable`; the document, the crawler
 files, the manifest and `sw.js` are `no-cache` — `sw.js` on purpose: a Worker registration is
 identified by its URL, so a Generation-stamped Worker would be a second registration, not a
-replacement, and it is the one script whose filename is deliberately not a cache key. 404s are never
+replacement, and it is the one script whose filename is deliberately not a cache key. `no-cache`
+means revalidate, not "do not store", so every one of those rows carries an ETag over the bytes as
+sent — one tag per representation, the gzip variant suffixed `-gzip` — and a matching
+`If-None-Match` gets a 304 carrying the validator, `Vary` and `Cache-Control` and no body at all,
+not even a `Content-Length`. That is asserted against the real `python server.py 0`, and that is
+where the authority sits: what survives a Cloudflare quick tunnel is a separate question, and an
+open one (BACKLOG.md D31). 404s are never
 cacheable; a superseded Generation (`app.v1.min.js`) stays on disk and is a 404; nothing else in the
 repository is reachable; a public path with no `POLICY` row exits at boot rather than answering 500
 mid-Run. `tests/measurement-server.mjs` asserts all of it over HTTP against the real
@@ -236,35 +242,49 @@ Paired Run against the Routes): performance 100 / accessibility 100 / best-pract
 FCP = LCP = 910 ms, TBT 0, CLS 0, 9 requests, 43.9 KB transferred; WebP arrives as `image/webp`, the
 script and the manifest gzipped, no robots-txt artifact, and `deprecations`, `inspector-issues` and
 `errors-in-console` all empty. The summary splits LCP into the Page share (load delay 13 ms, render
-delay 43 ms, and the LCP image resolved to `hero-768.webp` — D25 did not recur, and this hostname is
-49 characters where both that truncated the snippet were 58, the first evidence that the truncation
-goes with the length) and the Tunnel share (TTFB 140 ms, load duration 78 ms, Lantern's server
+delay 43 ms, and the LCP image resolved to `hero-768.webp` — D25 did not recur on this 49-character
+hostname, where the two it did recur on were 63 and 58 characters; one more data point for the guess
+D25 already records, not yet a rule) and the Tunnel share (TTFB 140 ms, load duration 78 ms, Lantern's server
 latency 54 ms and RTT 19 ms). Its pair six minutes earlier, 18:56:01Z, read LCP 949 ms with a Page
 share of 12 / 49 ms, and `compare` says `tunnel`: the tunnel moved −44 ms, which covers LCP −39 ms,
 against a Page share that moved −4 ms — the generated head block and the header's CSS did not move
 what the page itself costs.
 
-The 43.9 KB is not the 43.7 KB every earlier Report reads, and the difference is the ETag: a Run
-fetches exactly two `no-cache` rows, the document and `manifest.webmanifest`, and the header costs
-about 79 bytes on the wire apiece. A Run clears storage and sends no validator, so it pays for the
-ETag and saves nothing by it — the saving is the Repeat Visit's. Reports from before and after
-2026-09-04 are therefore not byte-comparable, which is expected rather than a regression.
+The 43.9 KB is the 43.7 KB the PWA-era Reports read plus the ETag; earlier Reports read other
+figures again, and only the run of 43.7 KB from 2026-09-02 onward is the one this displaces.
+`manifest.webmanifest` is where it can be measured cleanly, because its body is byte-identical
+across the change (`resourceSize` 1148 in every Report): its `transferSize` goes 594 B to 648 B, so
+about **53 bytes** per revalidated row arrive that did not before, against the 79 raw bytes the
+header costs `server.py`. A Run fetches exactly two `no-cache` rows, that manifest and the document,
+and pays on both while sending no validator of its own, because it clears storage first. Reports
+taken before and after 2026-09-04 are therefore not byte-comparable, which is expected rather than a
+regression. No Report yet shows the other side of that trade: the first Repeat Visit's eight rows
+are all `statusCode` 200, and there is not a 304 anywhere in it.
 
-The Run before this one on the same tunnel, 2026-09-04T18:31:37Z, is kept and scored SEO 92:
+The first Run of that tunnel, 2026-09-04T18:31:37Z, is kept and scored SEO 92:
 `canonical | score 0 | Is not an absolute URL (./)`. The canonical was relative on purpose and the
-Performance Contract held it that way, while Lighthouse accepts only an absolute one — the rule and
-the audit wanted opposite things, and eight points were the cost. Nothing reasoned that out; a
-Report did.
+Performance Contract held it that way, while Lighthouse accepts only an absolute one — the contract
+and the canonical audit wanted opposite things, and eight points were the cost. Nothing reasoned
+that out; a Report did.
 
-The first Repeat Visit is 2026-09-04T19:23:02Z: FCP = LCP = 893 ms over 8 requests and 0.0 KB
-transferred, against the same page's 9 requests and 43.9 KB as a Run. Every request the Report names
-came back at `transferSize` 0, the favicon does not appear at all, and the two rows whose `cache`
-field reads `none` are exactly the two `no-cache` rows — which is what distinguishes the Worker
-serving them from the HTTP cache doing it. TTFB falls to 78 ms and Lantern's estimates to 0, while
-render delay *rises* to 75 ms from a Run's 35–65 ms band: the network cost collapses and what is
-left is the Worker's own dispatch. The Repeat Visit before it, 19:04:21Z, is kept too and carries a
-mark — it measured a first visit twice, because Chromium honours the **first** `--user-data-dir` it
-is given, so the profile passed through `--chrome-flags` was ignored in silence.
+The first Repeat Visit is 2026-09-04T19:23:02Z, and what it shows is not what `8 requests · 0.0 KB`
+suggests. Every row reads `transferSize` 0 and `statusCode` 200, and the favicon does not appear at
+all. The six rows reading `cache: disk` — the four images, the behaviour and the icon — took 2 to
+5 ms each: Chrome's own cache served those, `immutable` doing exactly its job. The two reading
+`cache: none` are precisely the two `no-cache` rows, the document and the manifest, and they took
+79.9 ms and 89.6 ms with `server-response-time` at 76 ms. `sw.js` puts both through `networkFirst`,
+so the Worker went to the network for them and the page recorded nothing, because a Report does not
+see the Worker's own fetches. The 0.0 KB is the page context's figure, not the wire's.
+
+So the returning visitor's gain is small, and `compare` says it is not the page's: LCP reads 893 ms
+against the Run's 910, the tunnel moved −73 ms which covers that −17 ms, and the Page share moved
+**+30 ms** — render delay 75 ms against the Run's 43. That is B7's answer for now. A Worker that
+fetches the document network-first leaves the one request on the critical path where it was, and
+what the returning visitor saves is what the HTTP cache would have saved without it. Two of the
+readings a Repeat Visit was meant to give are still missing, both for the same reason: no 304
+appears, and `topUp()` leaves no trace of the three Rungs the page never fetches, because that work
+happens in the Worker's context too. The Repeat Visit before it, 19:04:21Z, is kept and carries a
+mark: it measured a first visit twice.
 
 The Run of record before these (2026-09-03T17:53:53Z, the control's third round of the Bench against
 the real container) read 921 ms with a Page share of 11 / 43 ms and a Tunnel share of
@@ -278,7 +298,7 @@ asset, read 1006 ms with 93 / 59 ms and 47 ms, and `node tools/run.mjs compare` 
 (2026-09-02T18:36:43Z, the first of the PWA, another tunnel) read 911 ms with a Page share of
 10 / 41 ms and a Tunnel share of 133 / 83 / 57 / 21 ms; `compare` against 12:47 reads `page` on
 +17 ms of render delay for +35 ms of LCP, which is the wander an unchanged page shows between Runs
-(35–65 ms of render delay across the Reports), not a regression — one pair cannot tell the two
+(34–65 ms of render delay across the Reports), not a regression — one pair cannot tell the two
 apart, and the verdict says so. The last Run before the PWA (2026-08-25T12:41:32Z) read 946 ms with
 a Page share of 10 / 48 ms over 7 requests and 32.3 KB; the two requests the PWA adds are
 `manifest.webmanifest` (594 B) and `icon-v1-180.png` (10.1 KB), and the 35 ms of LCP gained by
@@ -310,7 +330,9 @@ not less, while still costing *less* LCP (+17 ms against +21 ms) — TBT sums bl
 the whole trace, not only before paint, so moving the container's execution later shifts it out of
 LCP's way without shrinking it; deferring helps what it can help and nothing else. Performance
 reads 96 (`gtm`) and 94 (`gtm-deferred`) against the control's 100 — the first Arm scores below
-100 a Bench has produced.
+100 a Bench has produced. Its 43.7 KB control median predates the ETag: the same document measured
+against this `server.py` reads 43.9 KB, so compare a later Bench's Arm costs against its own
+control's medians and never against these.
 
 ## Change guidelines
 
