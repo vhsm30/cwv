@@ -231,15 +231,44 @@ cannot fail, and it is easiest to propose one in the same breath as the feature 
 **`reports/` holds the Reports**, named `<host>-<UTC fetchTime>Z.json` by the Run itself. See the
 `measuring-runs` skill for how to read one back.
 
-Current state (Run of 2026-09-03T17:53:53Z through a warm Cloudflare quick tunnel, the control's
-third round of a Bench against the real container): performance 100 / accessibility 100 /
-best-practices 100 / SEO 100, FCP = LCP = 921 ms, TBT 0, CLS 0, 9 requests, 43.7 KB transferred;
-WebP arrives as `image/webp`, the script and the manifest gzipped, no robots-txt artifact, and
-`deprecations`, `inspector-issues` and `errors-in-console` all empty. The summary splits LCP into
-the Page share (load delay 11 ms, render delay 43 ms; the LCP image again printed unresolved —
-D25 recurred on this tunnel's hostname too, 58 characters, so this is not a one-off) and the
-Tunnel share (TTFB 150 ms, load duration 93 ms, Lantern's server latency 65 ms and RTT 21 ms). The
-three Runs of that 2026-09-03T12:40–12:47Z tunnel session are the first
+Current state (Run of 2026-09-04T19:02:12Z through a warm Cloudflare quick tunnel, the second of a
+Paired Run against the Routes): performance 100 / accessibility 100 / best-practices 100 / SEO 100,
+FCP = LCP = 910 ms, TBT 0, CLS 0, 9 requests, 43.9 KB transferred; WebP arrives as `image/webp`, the
+script and the manifest gzipped, no robots-txt artifact, and `deprecations`, `inspector-issues` and
+`errors-in-console` all empty. The summary splits LCP into the Page share (load delay 13 ms, render
+delay 43 ms, and the LCP image resolved to `hero-768.webp` — D25 did not recur, and this hostname is
+49 characters where both that truncated the snippet were 58, the first evidence that the truncation
+goes with the length) and the Tunnel share (TTFB 140 ms, load duration 78 ms, Lantern's server
+latency 54 ms and RTT 19 ms). Its pair six minutes earlier, 18:56:01Z, read LCP 949 ms with a Page
+share of 12 / 49 ms, and `compare` says `tunnel`: the tunnel moved −44 ms, which covers LCP −39 ms,
+against a Page share that moved −4 ms — the generated head block and the header's CSS did not move
+what the page itself costs.
+
+The 43.9 KB is not the 43.7 KB every earlier Report reads, and the difference is the ETag: a Run
+fetches exactly two `no-cache` rows, the document and `manifest.webmanifest`, and the header costs
+about 79 bytes on the wire apiece. A Run clears storage and sends no validator, so it pays for the
+ETag and saves nothing by it — the saving is the Repeat Visit's. Reports from before and after
+2026-09-04 are therefore not byte-comparable, which is expected rather than a regression.
+
+The Run before this one on the same tunnel, 2026-09-04T18:31:37Z, is kept and scored SEO 92:
+`canonical | score 0 | Is not an absolute URL (./)`. The canonical was relative on purpose and the
+Performance Contract held it that way, while Lighthouse accepts only an absolute one — the rule and
+the audit wanted opposite things, and eight points were the cost. Nothing reasoned that out; a
+Report did.
+
+The first Repeat Visit is 2026-09-04T19:23:02Z: FCP = LCP = 893 ms over 8 requests and 0.0 KB
+transferred, against the same page's 9 requests and 43.9 KB as a Run. Every request the Report names
+came back at `transferSize` 0, the favicon does not appear at all, and the two rows whose `cache`
+field reads `none` are exactly the two `no-cache` rows — which is what distinguishes the Worker
+serving them from the HTTP cache doing it. TTFB falls to 78 ms and Lantern's estimates to 0, while
+render delay *rises* to 75 ms from a Run's 35–65 ms band: the network cost collapses and what is
+left is the Worker's own dispatch. The Repeat Visit before it, 19:04:21Z, is kept too and carries a
+mark — it measured a first visit twice, because Chromium honours the **first** `--user-data-dir` it
+is given, so the profile passed through `--chrome-flags` was ignored in silence.
+
+The Run of record before these (2026-09-03T17:53:53Z, the control's third round of the Bench against
+the real container) read 921 ms with a Page share of 11 / 43 ms and a Tunnel share of
+150 / 93 / 65 / 21 ms. The three Runs of that 2026-09-03T12:40–12:47Z tunnel session are the first
 Paired Runs: 2026-09-03T12:40:10Z, after one warming GET, read LCP 1177 ms with a load duration of
 350 ms, a server-latency estimate of 266 ms (the summary names it a known artifact) and a render
 delay of 131 ms, the first Chrome of the session; 12:42:08Z, after the pre-flight had fetched every
