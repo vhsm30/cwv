@@ -1,4 +1,5 @@
 {
+  "site": "https://field-notes-supply.example",
   "routes": [
     {
       "path": "/",

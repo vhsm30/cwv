@@ -141,6 +141,13 @@ const mutations = [
   // that the canonical is an absolute https URL — the self-hosted rule no longer reads it at all.
   route('M42 routes.json makes the canonical relative again', swap('"canonical": "https://field-notes-supply.example/"', '"canonical": "./"'), 'caught'),
   route('M53 routes.json makes the canonical protocol-relative', swap('"canonical": "https://field-notes-supply.example/"', '"canonical": "//field-notes-supply.example/"'), 'caught'),
+  // M54 restores what rewriting M42 removed. The old M42 mutated the canonical to another origin and
+  // was caught, but only as a side effect of the self-hosted rule reading canonicals as assets. Now
+  // routes.json's site is what refuses it, deliberately rather than incidentally.
+  route('M54 routes.json points the canonical at another origin', swap('"canonical": "https://field-notes-supply.example/"', '"canonical": "https://example.com/"'), 'caught'),
+  // M55: a second canonical, outside the generated block. The page model keeps both out of hrefs, so
+  // the self-hosted rule cannot see this one — only the contract's insistence on exactly one can.
+  page('M55 the document carries a second canonical link', swap('<link rel="apple-touch-icon" href="./icons/icon-v1-180.png">', '<link rel="canonical" href="https://field-notes-supply.example/story">\n  <link rel="apple-touch-icon" href="./icons/icon-v1-180.png">'), 'caught'),
   page('M43 og:title drifts from the document title', swap('<meta property="og:title" content="Field Notes Supply |', '<meta property="og:title" content="Field Notes Co |'), 'caught'),
   page('M44 og:image drifts from the document', swap('content="./images/hero-1200.jpg">', 'content="./images/hero-1201.jpg">'), 'caught'),
   route('M45 routes.json names a preview image that is not on disk', swap('"image": "./images/hero-1200.jpg"', '"image": "./images/hero-1201.jpg"'), 'caught'),

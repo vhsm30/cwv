@@ -388,17 +388,24 @@ reasonably could.
 
 ### D14 · The Storefront declares no canonical
 
-**Status. Done** with P2 (2026-09-04). The canonical link, relative because a Preview URL is
-random per session, written by `tools/build-pages.py` from `routes.json`.
+**Status. Done** with P2 (2026-09-04), and corrected the same day. It shipped relative, on the
+reasoning below that a Preview URL is random per session; the Run of 2026-09-04T18:31:37Z read SEO
+92 and named the reason itself — "Is not an absolute URL (./)" — so it is now absolute,
+`https://field-notes-supply.example/`, written by `tools/build-pages.py` from `routes.json`. A fix
+round the same day added `routes.json`'s `site`, the origin every Route's canonical must be on, and
+moved the canonical out of `page.hrefs` in `lib/page.mjs` so the self-hosted rule never reads it.
 
 **Problem.** There is no `<link rel="canonical">` anywhere in the document.
 
 **Evidence.** The served document was searched for `canonical`; nothing. `index.html:5-12` is the
 whole `<head>` before the inline `<style>`.
 
-**Shape.** `<link rel="canonical" href="./">` — relative on purpose. An absolute href would bake in
-the Preview URL, which is a different hostname every session, so it would be wrong by the next
-`./start-cloudflare.ps1`. One line, no contract conflict.
+**Shape.** `<link rel="canonical" href="https://field-notes-supply.example/">` — absolute on
+purpose, and on a reserved `.example` host rather than the Preview URL. A canonical says where a
+page prefers to live, not where it happens to be served, so the hostname that changes every session
+was never the one that belonged there; and Lighthouse scores a relative canonical 0 outright, which
+is eight SEO points. `routes.json:2` holds the origin, `routes.json:6` the Route's own canonical,
+and `tools/build-pages.py` writes the line between the marker comments.
 
 ### D15 · No Open Graph or Twitter Card tags
 
@@ -780,6 +787,7 @@ Recorded, not acted on; the repository was not otherwise modified by Task 10.
 | D27 | `RunRefused`'s message names a refused Repeat Visit a Run | in-process | Open |
 | D28 | A Repeat Visit's Report is accepted on host, a 200 document and the ngrok check alone | in-process | Open |
 | D29 | `formatComparison`'s `!sameVisit` branch has unpinned precedence | in-process | Open |
+| D30 | `core.autocrlf` with no `.gitattributes` makes the mutation harness report caught rows as `passes` | in-process | Open |
 
 ### D26 · `tests/measurement-server.mjs`'s file header uses `--` where the repository's other `.mjs` prose uses `—`
 
@@ -881,6 +889,39 @@ export function formatComparison(comparison) {
 (`!sameVisit`) and a host mismatch (`!samePreviewUrl`), and assert the printed head names it "A Run
 and a Repeat Visit," never "Two Runs" — pinning `!sameVisit` ahead of the other checks rather than
 leaving the order accidental.
+
+### D30 · `core.autocrlf` with no `.gitattributes` makes the mutation harness report caught rows as `passes`
+
+**Problem.** `core.autocrlf` is `true` and the repository has no `.gitattributes`, so a
+`git checkout` or `git stash` over `index.html`, `routes.json`, `manifest.webmanifest` or `sw.js`
+rewrites every one of their LF line endings to CRLF in the working tree. `tools/mutate-contract.mjs`
+then reads those bytes as its originals, and every mutation whose needle spans a line — written with
+`\n` — silently matches nothing. The row's file goes unmutated, the contract is green, and the
+harness prints `passes` for a mutation the contract does in fact catch: a false green in the one
+tool whose job is proving the contract can fail. It happened during Task 12 on 2026-09-04, on M48
+and M51, and it took an hour to tell from a real result.
+
+**Evidence.** `git config core.autocrlf` prints `true`; there is no `.gitattributes` at the
+repository root. `tools/mutate-contract.mjs:6` recommends the very command that causes it:
+
+```
+// mid-way is undone by `git checkout .`. Add a
+```
+
+`tools/mutate-contract.mjs:160` and `:165` (M48 and M51) chain `.replace()` calls whose needles carry
+`\n` and which `must()` does not cover, so a miss is silent rather than an error:
+
+```
+  page('M48 #story is nested back inside #shop', (h, f) => must(h, '<section class="story" id="story"', f)
+    .replace('      </div>\n    </section>\n    <section class="story" id="story" ...
+```
+
+**Shape.** A `.gitattributes` carrying `eol=lf` for the files the harness rewrites — the seven of
+`tools/mutate-contract.mjs:26`'s `FILES` — so a checkout of any of them cannot change a byte the
+harness reads. Not a repository-wide `text=auto`: that renormalises every file in the repository and
+would bury the diff of whatever round adds it. Worth pairing with a guard in the harness itself, so
+a needle that matches nothing fails the row instead of passing it, and with correcting the header's
+`git checkout .` advice to `git show HEAD:<path>`.
 
 ## Set aside on 2026-08-27
 

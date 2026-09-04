@@ -38,7 +38,7 @@ node --test tests/measurement-server.mjs           # the Measurement Server alon
 node --test tests/run.mjs                          # the Run alone (recorded Reports, no tunnel or Chrome)
 node --test tests/bench.mjs                        # the Bench alone: the Arms table, the generated Arms, the reading, the record
 node --test --test-name-pattern="lazy" tests/performance-contract.mjs   # one assertion
-node tools/mutate-contract.mjs                     # prove the contract can still fail (52 mutations of the page, the manifest, the Worker, an Arm, the Arms table and the Route table)
+node tools/mutate-contract.mjs                     # prove the contract can still fail (55 mutations of the page, the manifest, the Worker, an Arm, the Arms table and the Route table)
 python tools/build-images.py                       # rebuild every Rung from the Masters per images/slots.json
 python tools/build-icons.py                        # rebuild every icon and screenshot in icons/ from manifest.webmanifest
 node tools/build-arms.mjs                          # rebuild every Arm document from index.html per bench/arms.json
@@ -156,7 +156,14 @@ Reports; `read` recomputes the reading from them.
 
 **`routes.json` is the one home of every Route fact**, as `images/slots.json` is for images: each
 Route (there is one, `/` → `index.html`) with the URL it canonicalises to and the image and card
-type its social preview uses. Two consumers: `tools/build-pages.py`, which writes the canonical
+type its social preview uses. That canonical is absolute because Lighthouse scores a relative one
+0 — a Run of 2026-09-04 read SEO 92 on "Is not an absolute URL (./)" — and it names a reserved
+`.example` host rather than the Preview URL, because a canonical says where a page prefers to live
+rather than where it happens to be served; the table's `site`, above the Routes, is the origin
+every Route's canonical must be on. `lib/page.mjs` reads a canonical as a named fact of the page
+and never as a reference, so it never reaches `page.hrefs` and the self-hosted rule never sees it —
+exempting it there by its URL string would exempt any asset that happened to spell the same string.
+Two consumers: `tools/build-pages.py`, which writes the canonical
 link and the Open Graph and Twitter metas into the Route's own document between
 `<!-- routes.json: begin -->` and `<!-- routes.json: end -->`, and the Performance Contract, which
 holds every written value against the source it came from. `og:title` and `og:description` are not
@@ -214,7 +221,7 @@ is a backspace character, not a word boundary, and it made every attribute looku
 `undefined` while the suite still reported green. Read facts through the page model or from disk
 rather than as literals, and mutation-check new assertions by breaking the thing they guard: add a
 row to `tools/mutate-contract.mjs`, which mutates the page, the manifest, the Worker, an Arm, the
-Arms table and the Route table fifty-two ways (restoring each after) and expects every row to
+Arms table and the Route table fifty-five ways (restoring each after) and expects every row to
 behave as its table says — a page mutation rebuilds the Arms first and a Route-table mutation
 regenerates the document, so what a row reports is the contract's own verdict rather than a
 stale-generated-file failure. Apply that test while designing

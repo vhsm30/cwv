@@ -110,14 +110,11 @@ test('every image is offered in a modern format with a JPEG fallback on identica
 });
 
 test('all storefront assets are self-hosted', () => {
-  // A canonical is metadata, not an asset: the browser never fetches it, and it names the
-  // Storefront's production URL on purpose. Every reference the browser does fetch stays under the
-  // rule. The set is read from the page model, so a second metadata link cannot be smuggled in by
-  // editing this list.
-  const metadata = new Set(page.elements('link')
-    .filter((link) => link.attrs.rel === 'canonical')
-    .map((link) => link.attrs.href));
-  const references = [...page.assets, ...page.hrefs].filter((reference) => !metadata.has(reference));
+  // Every reference the browser fetches and every link a visitor can follow. A canonical is neither:
+  // nothing fetches it, and it names the Storefront's production URL on purpose, so lib/page.mjs
+  // keeps it out of hrefs by element. Filtering it out here by its URL instead would also exempt any
+  // asset that happened to spell the same string, which is a hole the shape of a CDN script.
+  const references = [...page.assets, ...page.hrefs];
   assert.ok(references.length > 0);
   for (const reference of references) {
     assert.doesNotMatch(reference, /^[a-z][a-z0-9+.-]*:/i, `${reference} names another origin`);
@@ -439,16 +436,19 @@ test('the site-verification tag is preserved', () => {
   assert.ok((page.meta('google-site-verification') ?? '').length > 0);
 });
 
-test('the document names its own canonical URL, the one routes.json gives it', () => {
-  // Absolute, never relative: Lighthouse refuses a relative canonical outright ("Is not an absolute
-  // URL"), and a Run of 2026-09-04 scored SEO 92 for exactly that before this rule existed. The host
-  // it names is the Storefront's production URL, which is deliberately not the Preview URL — a
-  // canonical names where a page prefers to live, not the tunnel it happens to be served through.
+test('the document names one canonical URL, absolute and on the Storefront\'s own origin', () => {
+  // Two failures, both SEO's, and neither catchable by comparing the document to the table: a
+  // route() mutation regenerates the document, so those two always agree. Relative is what a Run of
+  // 2026-09-04 caught, scoring SEO 92 on "Is not an absolute URL (./)". A canonical on somebody
+  // else's origin is the worse one — it hands the page's indexing to that domain — and it used to be
+  // caught only as a side effect of the self-hosted rule reading canonicals as assets, which it no
+  // longer does. routes.json's site is what pins it now.
   const route = routeOf('index.html');
-  const canonical = page.elements('link').filter((link) => link.attrs.rel === 'canonical');
-  assert.equal(canonical.length, 1, 'exactly one canonical link');
-  assert.equal(canonical[0].attrs.href, route.canonical);
-  assert.match(route.canonical, /^https:\/\/[^/]+\//, 'the canonical is an absolute https URL, or Lighthouse scores it 0');
+  assert.equal(page.canonicals.length, 1, 'exactly one canonical link');
+  const [href] = page.canonicals;
+  assert.equal(href, route.canonical, 'the document carries the canonical routes.json gives it');
+  assert.ok(URL.canParse(href), `${href} is not an absolute URL, and Lighthouse scores a relative canonical 0`);
+  assert.equal(new URL(href).origin, routeTable.site, 'the canonical names the Storefront\'s own origin');
 });
 
 test('the social preview is the page describing itself, not a second copy of its words', async () => {
