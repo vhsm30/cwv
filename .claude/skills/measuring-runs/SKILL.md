@@ -46,14 +46,39 @@ and prints the summary. The known artifacts live in `lib/report.mjs`, not in any
   the artifact and prints SEO without it (100). `robots.txt` itself is valid — the Performance
   Contract asserts it.
 - A cold tunnel: when Lantern's `network-server-latency` estimate is above 150 ms (a warm Cloudflare
-  tunnel reads 57–92 ms, ngrok 18–86 ms; the two cold Runs read 267 and 304 ms) the summary names
+  tunnel reads 54–92 ms, ngrok 18–86 ms; the two cold Runs read 267 and 304 ms) the summary names
   it as a known artifact of the tunnel, and the simulated LCP carries almost exactly that excess.
   The pre-flight's GET is what prevents it; a Run that shows it measured the tunnel waking up.
+- A Repeat Visit in which every request came down in full: nothing was reused, so it measured a
+  first visit, which is what one looks like when the two navigations did not share a browser. The
+  Report of 2026-09-04T19:04:21Z is kept as the example and prints the mark when read back.
 
 Reports captured through the chrome-devtools MCP (`channel: devtools`, the first nine) carry an extra
-`agentic-browsing` category; newer ones are `channel: cli`. Throttling is identical (mobile, simulated,
+`agentic-browsing` category; a Run reads `channel: cli` and a Repeat Visit `channel: node`, because
+the two take different paths into Lighthouse (below). Throttling is identical (mobile, simulated,
 412×823 @1.75), so metrics are comparable. At that emulation the Run fetches `hero-768.webp` as the
 LCP image.
+
+### A Repeat Visit
+
+`node tools/run.mjs repeat https://<host>/` measures what a Run cannot: the returning visitor. It
+performs two navigations of **one** browser — the first ordinary and thrown away, which installs the
+Worker; the second with `disableStorageReset`, which the Worker serves. The Report is named
+`<host>[-<Arm>]-repeat-<moment>.json` and `checkReport` accepts it only under that flag, refusing a
+cleared-storage Report as a Repeat Visit and a kept-storage one as a Run; `compare` names the pair
+when they are mixed.
+
+It goes through Lighthouse's **Node API**, not the CLI, and that is not a style choice. The CLI
+launches a Chrome of its own and has no way to be told which profile to use, and Chromium honours the
+**first** `--user-data-dir` it is given — chrome-launcher's own is always first — so a profile passed
+through `--chrome-flags` is ignored in silence. Every Repeat Visit taken before 2026-09-04 measured a
+first visit twice for exactly that reason, and read like a perfectly ordinary Run.
+
+Read one against a Run of the same page, not against another Repeat Visit, and expect the numbers to
+be less flattering than they look: `transferSize` 0 on every row means the page context paid nothing,
+not that the wire did. Check the `cache` field and the network span per row before concluding
+anything — on 2026-09-04 the two `no-cache` rows read `cache: none` and took 80 and 90 ms, because
+`sw.js` fetches both `networkFirst` and a Report never sees the Worker's own fetches.
 
 ### A fresh hostname and DNS
 

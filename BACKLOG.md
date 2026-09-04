@@ -411,8 +411,10 @@ and `tools/build-pages.py` writes the line between the marker comments.
 
 **Status. Done** with P2 (2026-09-04). Open Graph and the Twitter card, with `og:title`/
 `og:description` read from the document rather than written twice, as the item itself asked. The
-preview URLs are document-relative, so a crawler that requires absolute `og:image` will not render
-it; that waits on a stable origin, which this repo does not have and P3 does not give it.
+`og:image` is still document-relative, so a crawler that requires an absolute one will not render
+it. That was written when this repo had no stable origin to name; `routes.json:2` declared one the
+same day (`site`, `https://field-notes-supply.example`) and the canonical is pinned to it, so the
+obstacle is gone and only the work remains — tracked as **D32**, not as a dependency.
 
 **Problem.** Nothing describes the Storefront to a link preview. A reader pasting the Preview URL
 anywhere gets `<title>` and the meta description, with no image.
@@ -637,10 +639,19 @@ was 267 ms against 60 ms here, so it measured the tunnel, and is kept as the rec
 
 ### B7 · Teach the Run to measure a Worker-warm repeat visit
 
-**Status. Done** with P2 (2026-09-04). The Repeat Visit: two passes through one Chrome profile,
-`checkReport` under a flag, `<host>-repeat-<moment>.json`, CONTEXT.md's new term. Note the
-deviation from the Shape: only `disableStorageReset` is weighed, because `clearStorageTypes` keeps
-listing both stores when the reset is disabled. Note also what is still unmeasured — a Worker
+**Status. Done** with P2 (2026-09-04). The Repeat Visit: two navigations of one browser through
+Lighthouse's **Node API**, `checkReport` under a flag, `<host>-repeat-<moment>.json`, CONTEXT.md's
+new term. Two deviations from the Shape, both forced. Only `disableStorageReset` is weighed, because
+`clearStorageTypes` keeps listing both stores when the reset is disabled. And the mechanism is the
+Node API rather than two CLI passes sharing a `--user-data-dir`: Chromium honours the **first**
+`--user-data-dir` it is given and chrome-launcher's own is always first, so the CLI form measured a
+first visit twice in silence (`9ba7576` is the rewrite; the broken Report of 2026-09-04T19:04:21Z is
+kept and marked).
+
+The first answer it gave is not the one the item expected. LCP 893 ms against the Run's 910, and
+`compare` attributes even that to the tunnel while the Page share moves **+30 ms**: `sw.js` fetches
+the document `networkFirst`, so the one request on the critical path is still a network request and
+the returning visitor saves what the HTTP cache would have saved anyway. Still unmeasured: a Worker
 topping up a *second* Route, which needs P3.
 
 **Problem.** A Run clears storage before it navigates, so every Run is a first visit and the Worker
@@ -789,6 +800,10 @@ Recorded, not acted on; the repository was not otherwise modified by Task 10.
 | D29 | `formatComparison`'s `!sameVisit` branch has unpinned precedence | in-process | Open |
 | D30 | `core.autocrlf` with no `.gitattributes` makes the mutation harness report caught rows as `passes` | in-process | Open |
 | D31 | Two observations disagree about whether the ETag survives a Cloudflare quick tunnel | local-substitutable | Open |
+| D32 | `og:image` is document-relative, though `routes.json` now declares an origin | local-substitutable | Open |
+| D33 | `og:description` and `twitter:card` equality have no mutation that isolates them | in-process | Open |
+| D34 | The Chrome flags are the one measurement literal `MEASUREMENT` does not unify | in-process | Open |
+| D35 | The reused-nothing mark counts a 304's header bytes as "came down in full" | in-process | Open |
 
 ### D26 · `tests/measurement-server.mjs`'s file header uses `--` where the repository's other `.mjs` prose uses `—`
 
@@ -936,7 +951,7 @@ only the local behaviour, which the test owns.
 
 **Evidence.** `manifest.webmanifest` is served `no-cache` and its body is byte-identical across the
 change (`resourceSize` 1148 in all thirty Reports that fetch it). Its `transferSize` reads
-593–596 B in the twenty-five taken before 2026-09-04 and 648 B in every one taken after, the first
+593–596 B in the twenty-five taken before 2026-09-04 and 648 B in every Run taken after, the first
 day `server.py` carried `25096ab`. That is +54 B on a row whose body did not move, against the 79 raw
 bytes of the header `server.py:145` writes — the shape of an HPACK-compressed `ETag` arriving. The
 contrary observation is a `curl -sI` through the tunnel, recorded in this session's ledger, showing
@@ -951,6 +966,78 @@ check and D31 closes; if it strips both, the +53 B belongs to something else and
 paragraph's attribution needs revisiting. Either way a `no-cache` row's headers should be read once,
 directly, rather than argued from `transferSize` — which is CLAUDE.md's own rule about reading cost
 from a Report applied to a header instead of a body.
+
+### D32 · `og:image` is document-relative, though `routes.json` now declares an origin
+
+**Problem.** `routes.json`'s `og.image` is `./images/hero-1200.jpg`, and `tools/build-pages.py`
+writes it into the document unchanged. Several crawlers will not render a relative `og:image`, so
+the Storefront's link preview shows a title and a description and no picture in exactly the places a
+preview is for. D15 recorded this as blocked on there being no stable origin to name. That is no
+longer true: `routes.json:2` declares `site`, and the canonical the contract pins to it proves the
+origin is usable for a URL nothing fetches.
+
+**Evidence.** `routes.json:8` (`"image": "./images/hero-1200.jpg"`), written verbatim by
+`tools/build-pages.py` into `index.html`'s generated block; `routes.json:2` (`"site"`).
+`tests/performance-contract.mjs` asserts the tag equals the table and that the file is on disk, both
+of which stay true whichever form ships.
+
+**Shape.** Resolve `og.image` against `site` in the generator, as the canonical already is, and
+assert the written value is absolute and on that origin. The file-on-disk assertion has to resolve
+the URL back to a repository path to keep working, which is the only real work here. Not urgent: no
+Run measures a link preview, so this is a correctness item for readers, not a Win.
+
+### D33 · `og:description` and `twitter:card` equality have no mutation that isolates them
+
+**Problem.** The Performance Contract asserts `og:description` equals the document's own description
+and that `twitter:card` is a value Twitter defines, but no row of `tools/mutate-contract.mjs` can
+fail either one on its own. M46 mutates the card in `routes.json`, where `build-pages.py` refuses it
+before the contract runs, so the row reports the generator's verdict rather than the contract's; M41
+deletes the whole generated block and trips three earlier assertions first. By this repository's own
+rule, an assertion no mutation can fail is documentation, not Lock-in — and these two are currently
+documentation.
+
+**Evidence.** `tests/performance-contract.mjs:463` (`og:description`) and `:465` (`twitter:card`);
+`tools/mutate-contract.mjs`'s M41 and M46. The harness reads 55/55 with both assertions intact and
+would read 55/55 with either deleted.
+
+**Shape.** Two `page()` rows mutating the generated block in `index.html` directly — a drifted
+`og:description`, and a `twitter:card` value Twitter does not define — so the contract is what
+refuses them. A `page()` row regenerates nothing, so the mutated block survives to be read. Check
+each catches for its own reason before adding both.
+
+### D34 · The Chrome flags are the one measurement literal `MEASUREMENT` does not unify
+
+**Problem.** `tools/run.mjs` gathers the settings a Run and a Repeat Visit share into `MEASUREMENT`
+so the two cannot drift, and `tests/run.mjs` holds their `configSettings` to differing in exactly
+`channel` and `disableStorageReset`. The Chrome flags sit outside that: `passArgs` writes
+`--headless=new --no-sandbox` into a `--chrome-flags` string and `browserOptions` writes the same two
+into an array. They agree today by inspection, and nothing would notice if they stopped — a
+`configSettings` comparison cannot see how Chrome was launched.
+
+**Evidence.** `tools/run.mjs:63` (the `--chrome-flags` string) and `:241` (`browserOptions`).
+`tests/run.mjs` pins each against a literal, so a change to one and not the other fails a test for
+the wrong reason: the literal, not the drift.
+
+**Shape.** One `BROWSER_FLAGS` array beside `MEASUREMENT`, joined for the CLI and spread for the API,
+with the tests reading it rather than restating it. Small, and it removes the last place the two
+measurements can differ without anything saying so.
+
+### D35 · The reused-nothing mark counts a 304's header bytes as "came down in full"
+
+**Problem.** `knownArtifacts` marks a Repeat Visit in which every request came down in full, since
+that is indistinguishable from the two navigations not having shared a browser. Its predicate treats
+any row with `transferSize > 0` as having come down in full. A 304 carries headers and no body, so a
+genuinely revalidated row reads a small non-zero `transferSize` and counts as full — and a Repeat
+Visit that revalidated *every* row, which is the best outcome the ETag can produce, would be marked
+as the failure. Nothing shows this yet: every row a Repeat Visit has recorded is either 0 or a full
+200, and D31 is about whether a validator even reaches the browser through the tunnel.
+
+**Evidence.** `lib/report.mjs:234`. The Repeat Visit of 2026-09-04T19:23:02Z reads `transferSize` 0
+and `statusCode` 200 on all eight rows, so the predicate is never exercised against a 304.
+
+**Shape.** Read `statusCode` as well as `transferSize`: a 304 is reuse by definition and should clear
+the mark, not set it. Worth doing together with D31, since a Repeat Visit that revalidates is the
+observation both are waiting on.
 
 ## Set aside on 2026-08-27
 

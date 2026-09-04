@@ -4,7 +4,9 @@ Design for P2 of `docs/superpowers/plans/2026-09-02-ecommerce-bench.md`, settled
 2026-09-04. Status: approved. The implementation plan is
 `docs/superpowers/plans/2026-09-04-routes.md`; two things this document said were corrected while
 that plan was written, both marked in place — D17 becomes CSS-only, and the mutation harness has to
-be fixed before any new row means anything.
+be fixed before any new row means anything. A third was corrected during execution and is marked in
+place the same way: the canonical is **absolute**, not document-relative. A Run of
+2026-09-04T18:31:37Z scored SEO 92 against this document's reasoning, and `reports/` holds it.
 
 ## What P2 answers
 
@@ -25,7 +27,7 @@ Routes) is what event tracking will actually need; P2 is the infrastructure it s
 | Generator depth | A thin `<head>`-block generator (canonical + OG/Twitter only) | D14/D15 are the only two items that are actually *data*; D17/D18 are markup/CSS decisions, not facts a generator should derive |
 | D17 (nav below 700px) | A CSS-only wrapped nav row — the header wraps and the nav takes the second line (**revised 2026-09-04 while planning**; originally a vanilla-JS disclosure) | "Accept it and document it" leaves the regression in place. A disclosure needs the behaviour, and the behaviour is served `immutable`, so editing it forces a new Generation — a new filename, `<script src>`, `PUBLIC` row, `SHELL` entry and `sw.js` cache name moving together, with `app.v2.min.js` kept and asserted 404. That contradicts this spec's own "Untouched, on purpose: `sw.js`", and it is a large, measurement-sensitive change to buy a toggle for two links |
 | The facts file | New `routes.json`, not folded into an existing file | Matches the plan's own proposed vocabulary ("Route"); gives P3 a table to extend rather than a file to invent |
-| Canonical form | Document-relative (`./`), never absolute | Preview URLs are random per session (CLAUDE.md's own reasoning elsewhere) — there is no stable origin an absolute canonical could name |
+| Canonical form | ~~Document-relative (`./`), never absolute~~ **Absolute, on a `site` origin the table declares** (**revised 2026-09-04 during execution**) | The original reasoning — Preview URLs are random per session, so there is no stable origin to name — was wrong about what a canonical is for. It names where a page *prefers* to live, not where it happens to be served, and Lighthouse scores a relative one 0 outright: the Run of 2026-09-04T18:31:37Z read `canonical | score 0 | Is not an absolute URL (./)` and SEO 92. `routes.json` gained a `site` key, `https://field-notes-supply.example`, a reserved host rather than any Preview URL, and the contract pins every Route's canonical to that origin |
 | Generator language and shape | Python (`tools/build-pages.py`, ADR 0001's own naming), self-normalizing: reads and rewrites the same file's own `<head>`, idempotent on rebuild | The first generator whose source and output are the same document, since title/description must be read from the page rather than duplicated (D15's own note) |
 | Insertion mechanism | Python stdlib `html.parser.HTMLParser`, structured, never regex; the generated block bracketed by two HTML comments so a rerun replaces rather than duplicates | Matches the rigor `lib/page.mjs`'s `parsePage` already applies in JS; CLAUDE.md's explicit rule against building patterns from strings |
 | D23 scope | `NO_CACHE` rows only (the document, the manifest, `sw.js`, the crawler files, the Arms) | `IMMUTABLE` rows already avoid revalidation via `max-age=1y`; an ETag there would be dead code |
@@ -46,11 +48,12 @@ of P3, which is where a second Route would actually need a new `PUBLIC` row. Sha
 
 ```json
 {
+  "site": "https://field-notes-supply.example",
   "routes": [
     {
       "path": "/",
       "file": "index.html",
-      "canonical": "./",
+      "canonical": "https://field-notes-supply.example/",
       "og": { "image": "images/hero-1200.jpg", "card": "summary_large_image" }
     }
   ]
@@ -71,7 +74,7 @@ It reads the title and description already in the document, and writes a `<head>
 
 ```html
 <!-- routes.json: begin -->
-<link rel="canonical" href="./">
+<link rel="canonical" href="https://field-notes-supply.example/">
 <meta property="og:title" content="…">
 <meta property="og:description" content="…">
 <meta property="og:image" content="images/hero-1200.jpg">
@@ -145,7 +148,8 @@ for the document and its own assets.
 
 **`tests/performance-contract.mjs`** (same single `page` object — one document, so none of the
 module-scope restructuring a second document would eventually need applies yet): canonical `href`
-agrees with `routes.json` and is relative; `og:title`/`og:description` equal the page's own
+agrees with `routes.json`, parses as an absolute URL and sits on the table's own `site` origin
+(**revised 2026-09-04 during execution**; originally "and is relative"); `og:title`/`og:description` equal the page's own
 `<title>`/`<meta name="description">`; `og:image` resolves to a real file on disk; `twitter:card` is
 a valid value. D18: `#story`'s section is not nested inside `#shop`'s, and both carry real
 `aria-labelledby` targets. D17: the nav's `display`, cascaded per `@media` context the same way the

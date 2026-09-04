@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 // The Performance Contract's own check: can it still fail? Each mutation below breaks one thing an
 // assertion guards (or, for the rows marked "passes", changes something harmless). One of the
-// files the contract and the Bench's assertions read — the page, the manifest, the Worker, an Arm,
-// the Arms table — is mutated in place, the contract is run, and the file is restored; a crash
-// mid-way is undone by `git checkout .`. Add a
+// files the contract and the Bench's assertions read — the page, the manifest, the Worker, the two
+// Arms, the Arms table and the Route table, which is FILES below — is mutated in place, the
+// contract is run, and the file is restored. Do NOT undo a crash mid-way with `git checkout`:
+// core.autocrlf is true and the repository has no .gitattributes, so a checkout rewrites every LF
+// in these files to CRLF, every needle carrying a newline then matches nothing, and this harness
+// reports `passes` for rows the contract does in fact catch — a false green in the one tool whose
+// job is proving the contract can fail (BACKLOG.md D30). Use `git show HEAD:<path>` instead. Add a
 // row whenever you add an assertion: a new assertion that no mutation can fail is documentation,
 // not Lock-in — and apply the test while designing the assertion, since one that restates the
 // markup it guards cannot fail.
@@ -14,7 +18,10 @@
 // contract read the page through lib/page.mjs, M5, M6, M10, M14, M15 and M16 passed unnoticed and
 // M7 and M8 failed for no reason. M17-M34 came with the PWA of 2026-09-02; M35-M38 with the Bench
 // of 2026-09-03. M39 came with the harness fix of 2026-09-04, and
-// covers the rule M7 and M8 used to cover by accident.
+// covers the rule M7 and M8 used to cover by accident. M40-M55 are the Routes of 2026-09-04: the
+// generated head block and the Route table (M40-M47, M53-M55), #story (M48-M51), and the nav that
+// no longer disappears below 700px (M52). The numbering is not the order the rows run in — each
+// sits beside the assertion it exercises, and M53-M55 were added by later rounds beside M42.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

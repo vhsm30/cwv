@@ -70,9 +70,9 @@ means revalidate, not "do not store", so every one of those rows carries an ETag
 disk, one tag per representation with the gzip variant suffixed `-gzip` — a cache holding the
 identity bytes must not be told the gzip variant is still fresh. A matching `If-None-Match` gets a
 304 carrying the validator and no body at all, not even a `Content-Length`, since a length of 0
-would claim the representation is empty when it is not. `tests/measurement-server.mjs` asserts that
-against the real `python server.py 0`, and that is where the authority sits: what survives a
-Cloudflare quick tunnel is a separate question, and an open one (BACKLOG.md D31). 404s are never
+would claim the representation is empty when it is not. That is asserted on the wire, and that is
+where the authority sits: what survives a Cloudflare quick tunnel is a separate question, and an
+open one (BACKLOG.md D31). 404s are never
 cacheable; a superseded Generation (`app.v1.min.js`) stays on disk and is a 404; nothing else in the
 repository is reachable; a public path with no `POLICY` row exits at boot rather than answering 500
 mid-Run. `tests/measurement-server.mjs` asserts all of it over HTTP against the real
@@ -255,7 +255,7 @@ not what the Routes cost against the page before them, which no Paired Run can s
 The 43.9 KB against the PWA-era control Reports' 43.7 KB has two causes, and it is worth keeping
 them apart. `manifest.webmanifest` isolates one: its body is byte-identical everywhere
 (`resourceSize` 1148 in all thirty Reports that fetch it), and its `transferSize` reads 593–596 B in
-the twenty-five taken before 2026-09-04 and 648 B in every one taken after — **about 54 bytes** a
+the twenty-five taken before 2026-09-04 and 648 B in every Run taken after — **about 54 bytes** a
 row, against the 79 raw bytes of the header `server.py` writes. A Run fetches exactly two `no-cache`
 rows, that manifest and the document, so roughly 106 B of the change is that. The rest is the page:
 the document's own body grew 674 bytes (`resourceSize` 10 194 → 10 868) for the generated head block
