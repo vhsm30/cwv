@@ -137,8 +137,10 @@ const mutations = [
     return h.slice(0, begin) + h.slice(end);
   }, 'caught'),
   // M42 is the regression a real Run caught: a relative canonical scores 0 on Lighthouse's canonical
-  // audit and cost the Storefront eight SEO points. What refuses it now is the contract's own rule
-  // that the canonical is an absolute https URL — the self-hosted rule no longer reads it at all.
+  // audit and cost the Storefront eight SEO points. What refuses it now is `URL.canParse` on the
+  // document's own canonical — neither `./` nor M53's `//host/` parses without a base — and the
+  // self-hosted rule no longer reads a canonical at all. The scheme is `https` because
+  // routes.json's `site` is, which the origin equality holds it to; no rule asserts it separately.
   route('M42 routes.json makes the canonical relative again', swap('"canonical": "https://field-notes-supply.example/"', '"canonical": "./"'), 'caught'),
   route('M53 routes.json makes the canonical protocol-relative', swap('"canonical": "https://field-notes-supply.example/"', '"canonical": "//field-notes-supply.example/"'), 'caught'),
   // M54 restores what rewriting M42 removed. The old M42 mutated the canonical to another origin and
