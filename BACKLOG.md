@@ -737,7 +737,7 @@ absorbed, recorded here so the evolution pays the backlog down instead of orphan
 | D14 canonical · D15 Open Graph · D17 nav below 700px · D18 `#story` nesting | P2 (Routes) — **built** | Each is a property of a document a generator would write once |
 | D23 validators for `no-cache` | P2 (Routes), beside B7 — **built** | Both are what a repeat view costs, which nothing measures yet |
 
-Unassigned and Open: D11, D13, D16, D19, D20, D21, D24, D25, D31. The two Set-aside items premised on
+Unassigned and Open: D11, D13, D16, D19, D20, D21, D24, D25. The two Set-aside items premised on
 one URL — no per-Product URLs and a sitemap (`## Set aside on 2026-08-27`) — are still set aside,
 now with a date to revisit: whenever P3 lands a second Route.
 
@@ -788,6 +788,7 @@ Recorded, not acted on; the repository was not otherwise modified by Task 10.
 | D28 | A Repeat Visit's Report is accepted on host, a 200 document and the ngrok check alone | in-process | Open |
 | D29 | `formatComparison`'s `!sameVisit` branch has unpinned precedence | in-process | Open |
 | D30 | `core.autocrlf` with no `.gitattributes` makes the mutation harness report caught rows as `passes` | in-process | Open |
+| D31 | Two observations disagree about whether the ETag survives a Cloudflare quick tunnel | local-substitutable | Open |
 
 ### D26 · `tests/measurement-server.mjs`'s file header uses `--` where the repository's other `.mjs` prose uses `—`
 
@@ -923,7 +924,7 @@ would bury the diff of whatever round adds it. Worth pairing with a guard in the
 a needle that matches nothing fails the row instead of passing it, and with correcting the header's
 `git checkout .` advice to `git show HEAD:<path>`.
 
-### D31 · Two observations disagree about whether the ETag survives a Cloudflare quick tunnel · Open
+### D31 · Two observations disagree about whether the ETag survives a Cloudflare quick tunnel
 
 **Problem.** Task 11's Step 3 checked the ETag live and recorded that Cloudflare strips it: through
 the tunnel the document came back with `Cache-Control`, `Vary` and `CF-Cache-Status: DYNAMIC` and no
@@ -934,9 +935,9 @@ Repeat Visit is able to measure at all. Nothing here resolves it, and CLAUDE.md 
 only the local behaviour, which the test owns.
 
 **Evidence.** `manifest.webmanifest` is served `no-cache` and its body is byte-identical across the
-change (`resourceSize` 1148 in every Report on disk). Its `transferSize` reads 593-595 B in all
-eleven Reports of 2026-09-02 and 2026-09-03, and 648 B in all four of 2026-09-04, the first day
-`server.py` carried `25096ab`. That is +53 B on a row whose body did not move, against the 79 raw
+change (`resourceSize` 1148 in all thirty Reports that fetch it). Its `transferSize` reads
+593–596 B in the twenty-five taken before 2026-09-04 and 648 B in every one taken after, the first
+day `server.py` carried `25096ab`. That is +54 B on a row whose body did not move, against the 79 raw
 bytes of the header `server.py:145` writes — the shape of an HPACK-compressed `ETag` arriving. The
 contrary observation is a `curl -sI` through the tunnel, recorded in this session's ledger, showing
 no `ETag` on the document.
