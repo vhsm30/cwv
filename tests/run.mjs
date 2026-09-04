@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { loadArms } from '../lib/arms.mjs';
 import { loadPage } from '../lib/page.mjs';
 import { checkReport, compare, formatComparison, formatCurrentState, formatSummary, isRepeatVisit, readReport, reportName, summarize } from '../lib/report.mjs';
-import { RunRefused, fetchPreflight, performRun, recordedMeasure, repeatMeasure } from '../tools/run.mjs';
+import { RunRefused, browserOptions, fetchPreflight, passArgs, performRun, recordedMeasure, repeatMeasure } from '../tools/run.mjs';
 
 // The recorded Reports are the second adapter: everything the Run does after Lighthouse returns
 // (refusing, naming, summarising, writing) is asserted here without a tunnel or Chrome.
@@ -395,25 +395,65 @@ test('the printed summary shows both shares, and the cold-tunnel artifact withou
   assert.doesNotMatch(cold, /would be/);
 });
 
+// The two real Repeat Visits of 2026-09-04, through one Cloudflare tunnel: the defect and the fix.
+// 19:04:21Z is the last Repeat Visit taken through two CLI passes, whose profile flag Chrome ignored
+// — 9 requests, every one in full, a first visit measured twice. 19:23:02Z is the first taken as two
+// navigations of one browser — 8 requests, every one at transferSize 0. Located by fetchTime, never
+// by file name, like every other Report here.
+const brokenRepeat = byFetchTime('2026-09-04T19:04:21');
+const goodRepeat = byFetchTime('2026-09-04T19:23:02');
+
 test('a Repeat Visit that reused nothing is marked, because that is what a lost profile looks like', () => {
   // Threshold-free on purpose: a real return reuses *something* — an Immutable Asset from the HTTP
   // cache, a Shell entry from the Worker, a 304 on a no-cache row — and every one of those reads
   // transferSize 0 or a validator's few bytes. A Repeat Visit in which every request came down in
   // full did not return at all. A Run is never marked: a Run is a first visit and reuses nothing by
   // design.
-  const report = keptStorage(reference.report);
-  const marked = summarize(report).artifacts.find((artifact) => artifact.audit === 'network-requests');
-  assert.ok(marked, 'a Repeat Visit that fetched everything in full is marked');
+  assert.ok(isRepeatVisit(brokenRepeat) && isRepeatVisit(goodRepeat), 'both are Repeat Visits by their own settings');
+  const marked = summarize(brokenRepeat).artifacts.find((artifact) => artifact.audit === 'network-requests');
+  assert.ok(marked, 'the Repeat Visit that fetched everything in full is marked');
   assert.match(marked.reason, /first visit/);
+  assert.equal(marked.scoreWithout, null, 'the mark costs no score: it is a measurement that did not happen');
+  assert.equal(summarize(goodRepeat).artifacts.some((a) => a.audit === 'network-requests'), false,
+    'the Repeat Visit that returned is not marked');
   assert.equal(summarize(reference.report).artifacts.some((a) => a.audit === 'network-requests'), false,
     'a Run is not marked for reusing nothing, which is what a first visit does');
 });
 
 test('one reused request is enough to clear the mark', () => {
-  const report = keptStorage(reference.report);
+  // The rule behind the mark, mutated: the broken Report differs from a returning one only in that
+  // nothing came back reused, so one request that did clears it. Cloned in memory — the Report on
+  // disk is the evidence of the defect and is never edited.
+  const report = structuredClone(brokenRepeat);
   const items = report.audits['network-requests'].details.items;
+  assert.ok(items.every((item) => item.transferSize > 0), 'the broken Repeat Visit fetched every request in full');
   items[items.length - 1] = { ...items[items.length - 1], transferSize: 0 };
   assert.equal(summarize(report).artifacts.some((a) => a.audit === 'network-requests'), false);
+});
+
+test('the printed summary of the broken Repeat Visit names the mark, and the good one names none', () => {
+  const broken = formatSummary(summarize(brokenRepeat));
+  assert.match(broken, /^Repeat Visit of https:/);
+  assert.match(broken, /known artifact: network-requests \(performance\) — every request came down in full/);
+  assert.doesNotMatch(broken, /would be/, 'the mark carries no score clause');
+  assert.doesNotMatch(formatSummary(summarize(goodRepeat)), /known artifact/);
+});
+
+test('a Repeat Visit was measured under the same settings as a Run, but for the two that make it one', () => {
+  // Read from two real Reports rather than from the code that produced them: this is the claim
+  // `compare` rests on, and it is the one that could not be checked while the only Repeat Visit in
+  // the suite was a Run with a flag flipped. channel says how the Report was taken — `node` through
+  // Lighthouse's API, `cli` through its CLI — and disableStorageReset is what makes a return a return.
+  // Two frozen Reports, so this pins the parity as measured on 2026-09-04 and would catch a fixture
+  // regenerated under drifted settings; MEASUREMENT in tools/run.mjs is what prevents the drift.
+  // Against reference.report, which REFERENCE_FETCH_TIME fixes at Lighthouse 13.4.1: the two 13.4.0
+  // Reports differ in more, which is an older Lighthouse's defaults rather than a drift.
+  const keys = [...new Set([...Object.keys(reference.report.configSettings), ...Object.keys(goodRepeat.configSettings)])];
+  const differ = keys.filter((key) =>
+    JSON.stringify(reference.report.configSettings[key]) !== JSON.stringify(goodRepeat.configSettings[key]));
+  assert.deepEqual(differ.sort(), ['channel', 'disableStorageReset']);
+  assert.equal(reference.report.configSettings.channel, 'cli');
+  assert.equal(goodRepeat.configSettings.channel, 'node');
 });
 
 // Two Runs side by side. Deltas read later minus earlier, in the order given.
@@ -606,7 +646,10 @@ test('a Repeat Visit is two navigations of one browser, and the second is the on
   const launched = [];
   const launch = async (profile) => {
     launched.push(profile);
-    return { port: 9222, kill: async () => {} };
+    // kill is not async, because chrome-launcher's is not: it returns void. A fake that returned a
+    // promise would accept a `browser.kill().catch(...)` the real one throws a TypeError out of, and
+    // a fake more capable than the thing it stands for cannot catch the bug the difference causes.
+    return { port: 9222, kill: () => {} };
   };
   const calls = [];
   const pass = async ({ browser, settings }) => {
@@ -621,6 +664,37 @@ test('a Repeat Visit is two navigations of one browser, and the second is the on
   assert.ok(!calls[0].settings.disableStorageReset, 'the first navigation clears storage, or it inherits a state nobody chose');
   assert.equal(calls[1].settings.disableStorageReset, true, 'the second keeps storage, so the Worker the first installed serves what it kept');
   assert.ok(isRepeatVisit(kept), 'the Report returned is the second navigation\'s');
+});
+
+test('the browser is given its profile where chrome-launcher reads it, never as a Chrome flag', () => {
+  // The bug this task fixed, as an assertion: chrome-launcher pushes its own --user-data-dir ahead
+  // of anything in chromeFlags, and Chromium honours the first it is given. A profile named in
+  // chromeFlags is therefore ignored in silence — which is how every Repeat Visit before
+  // 2026-09-04 measured a first visit twice.
+  const options = browserOptions('PROFILE');
+  assert.equal(options.userDataDir, 'PROFILE');
+  for (const flag of options.chromeFlags) {
+    assert.doesNotMatch(flag, /^--user-data-dir=/, 'a profile in chromeFlags is a profile Chrome ignores');
+  }
+});
+
+test('a Run\'s command line is exactly what it has been since the first Report', () => {
+  // Eighteen Reports are compared against each other across months. Anything that changes how a Run
+  // reaches Chrome makes those comparisons apples to oranges, quietly — so the argv is pinned here
+  // rather than trusted to a comment. A flag that genuinely must change fails this assertion first,
+  // which is where the decision belongs.
+  assert.deepEqual(passArgs({ cli: 'CLI', url: 'URL', reportFile: 'REPORT', headersFile: 'HEADERS', profile: 'PROFILE' }), [
+    'CLI',
+    'URL',
+    '--output=json',
+    '--output-path=REPORT',
+    '--form-factor=mobile',
+    '--screenEmulation.mobile',
+    '--extra-headers=HEADERS',
+    '--only-categories=performance,accessibility,best-practices,seo',
+    '--chrome-flags=--headless=new --no-sandbox --user-data-dir=PROFILE',
+    '--quiet',
+  ]);
 });
 
 test('a Run never overwrites a Report already on disk', async () => {

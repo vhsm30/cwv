@@ -31,7 +31,41 @@ import { checkReport, compare, formatComparison, formatCurrentState, formatSumma
 
 const REPORTS_DIR = fileURLToPath(new URL('../reports/', import.meta.url));
 const BYPASS_HEADERS = { 'ngrok-skip-browser-warning': 'true' };
-const CATEGORIES = 'performance,accessibility,best-practices,seo';
+// Every setting a measurement is taken under, in one place. A Run reaches Chrome through the
+// Lighthouse CLI and a Repeat Visit through Lighthouse's own API; two literals would drift the
+// moment a flag were added to one and not the other, and a Repeat Visit measured under conditions
+// its Run was not is a Report that lies quietly — `compare` reads the two side by side and could
+// not tell. So the CLI's flags are derived from these, never written beside them.
+const MEASUREMENT = {
+  formFactor: 'mobile',
+  screenEmulation: { mobile: true },
+  onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+};
+
+// The same settings as CLI flags, in the order a Run has always passed them. --extra-headers names
+// a file the caller writes; BYPASS_HEADERS is what goes in it, and is what apiPass passes directly.
+const measurementArgs = (headersFile) => [
+  `--form-factor=${MEASUREMENT.formFactor}`,
+  ...(MEASUREMENT.screenEmulation.mobile ? ['--screenEmulation.mobile'] : []),
+  `--extra-headers=${headersFile}`,
+  `--only-categories=${MEASUREMENT.onlyCategories.join(',')}`,
+];
+
+// A Run's whole command line, exported so it can be pinned: the assertion that the Run's path has
+// not moved is worth more than the comment saying it must not.
+export function passArgs({ cli, url, reportFile, headersFile, profile, extra = [] }) {
+  return [
+    cli,
+    url,
+    '--output=json',
+    `--output-path=${reportFile}`,
+    ...measurementArgs(headersFile),
+    `--chrome-flags=--headless=new --no-sandbox --user-data-dir=${profile}`,
+    '--quiet',
+    ...extra,
+  ];
+}
+
 // Asks the configured DNS servers directly (c-ares), bypassing the Windows cache that `curl` reads
 // from — the cache that said "yes" on 2026-09-02 while the Run's Chrome was told "no such name".
 // Bounded, so an unanswered query refuses in seconds.
@@ -132,25 +166,19 @@ export async function performRun({ url, measure, reportsDir = REPORTS_DIR, prefl
   return { path: target, summary: summarize(report, { repeat }) };
 }
 
-// One Lighthouse pass. `profile` is a Chrome user-data directory: two passes naming the same one
-// share a profile, which is how a Worker the first installed is still installed for the second.
+// One Lighthouse pass. `profile` is inert, and knowingly so: chrome-launcher pushes its own
+// --user-data-dir ahead of anything in --chrome-flags and Chromium honours the first it is given, so
+// the CLI always measures in a temporary profile of chrome-launcher's own naming. Nothing is lost —
+// a Run is a first visit and wants a fresh profile — but it is also why the Repeat Visit could not
+// stay on the CLI and drives Lighthouse's API instead (repeatMeasure). The flag is kept because
+// removing it would move a Run's command line, which is pinned (passArgs), and would strand
+// workDirectory's space guard below, which exists only because this path is space-joined into
+// --chrome-flags.
 async function lighthousePass({ cli, url, workDir, name, profile, extra = [] }) {
   const headersFile = path.join(workDir, 'headers.json');
   const reportFile = path.join(workDir, `${name}.json`);
   await writeFile(headersFile, JSON.stringify(BYPASS_HEADERS));
-  const args = [
-    cli,
-    url,
-    '--output=json',
-    `--output-path=${reportFile}`,
-    '--form-factor=mobile',
-    '--screenEmulation.mobile',
-    `--extra-headers=${headersFile}`,
-    `--only-categories=${CATEGORIES}`,
-    `--chrome-flags=--headless=new --no-sandbox --user-data-dir=${profile}`,
-    '--quiet',
-    ...extra,
-  ];
+  const args = passArgs({ cli, url, reportFile, headersFile, profile, extra });
   const { code, stderr } = await finished(spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'] }));
   let text = null;
   try {
@@ -206,31 +234,38 @@ async function globalModule(...segments) {
   return import(pathToFileURL(path.join(root.trim(), ...segments)).href);
 }
 
+// The options chrome-launcher is launched with, apart so they can be asserted without launching
+// anything. Both halves matter: the profile must be named where chrome-launcher reads it, and it
+// must NOT be named in chromeFlags, where Chromium would ignore it behind chrome-launcher's own.
+export const browserOptions = (profile) => ({
+  chromeFlags: ['--headless=new', '--no-sandbox'],
+  userDataDir: profile,
+});
+
 // One headless Chrome, in a profile we name. chrome-launcher invents a temporary profile of its own
-// unless it is given userDataDir here — and it pushes that one FIRST, ahead of anything in
-// chromeFlags, which is decisive: Chromium honours the first --user-data-dir it is given, not the
-// last. A profile passed through --chrome-flags is therefore ignored in silence, which is how every
-// Repeat Visit before 2026-09-04 measured a first visit twice.
+// unless it is given userDataDir — and it pushes that one FIRST, ahead of anything in chromeFlags,
+// which is decisive: Chromium honours the first --user-data-dir it is given, not the last. A profile
+// passed through --chrome-flags is therefore ignored in silence, which is how every Repeat Visit
+// before 2026-09-04 measured a first visit twice.
 async function launchBrowser(profile) {
   const chromeLauncher = await globalModule('lighthouse', 'node_modules', 'chrome-launcher', 'dist', 'chrome-launcher.js');
   // chrome-launcher opens its log files inside the profile before Chrome creates it.
   await mkdir(profile, { recursive: true });
-  return chromeLauncher.launch({ chromeFlags: ['--headless=new', '--no-sandbox'], userDataDir: profile });
+  return chromeLauncher.launch(browserOptions(profile));
 }
 
-// One navigation of that browser. Every setting matches what lighthousePass passes the CLI, so a
-// Repeat Visit and a Run differ in the two things they are meant to differ in and nothing else: the
-// browser is reused, and the second navigation keeps storage. Only `channel` reads differently —
-// `node` rather than `cli` — and the summary prints it, because a Report should say how it was taken.
+// One navigation of that browser, under the same MEASUREMENT a Run is taken under — the same object,
+// not the same values written twice — so a Repeat Visit and a Run differ in the two things they are
+// meant to differ in and nothing else: the browser is reused, and the second navigation keeps
+// storage. Only `channel` reads differently — `node` rather than `cli` — and the summary prints it,
+// because a Report should say how it was taken.
 async function apiPass({ browser, url, settings = {} }) {
   const lighthouse = (await globalModule('lighthouse', 'core', 'index.js')).default;
   const { lhr } = await lighthouse(url, {
     port: browser.port,
     output: ['json'],
-    formFactor: 'mobile',
-    screenEmulation: { mobile: true },
     extraHeaders: BYPASS_HEADERS,
-    onlyCategories: CATEGORIES.split(','),
+    ...MEASUREMENT,
     ...settings,
   });
   return lhr;
@@ -247,11 +282,16 @@ export async function repeatMeasure(url, { pass = apiPass, launch = launchBrowse
     await pass({ browser, url, settings: {} });
     return await pass({ browser, url, settings: { disableStorageReset: true } });
   } finally {
-    // chrome-launcher's kill() returns void, not a promise; Promise.resolve takes either, so a
-    // cleanup failure is caught rather than thrown out of the finally in place of the Report.
-    await Promise.resolve(browser.kill()).catch(() => {});
-    // Chrome may still hold the profile's files (EPERM on Windows). A complete Report must never be
-    // lost to a cleanup failure, so this retries and then gives up quietly.
+    // chrome-launcher's kill() returns void, so there is no promise to catch: a failure here is
+    // synchronous, and it must not replace a finished Report with a cleanup error.
+    try {
+      browser.kill();
+    } catch {
+      // Chrome is already gone, or its profile files are still held. Neither is the Report's problem.
+    }
+    // Chrome may still hold the profile's files (EPERM on Windows), the more so because userDataDir
+    // is ours: chrome-launcher's destroyTmp early-returns without closing its own log handles. A
+    // complete Report must never be lost to a cleanup failure, so this retries and gives up quietly.
     await rm(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
   }
 }

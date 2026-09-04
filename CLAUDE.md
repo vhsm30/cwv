@@ -29,7 +29,7 @@ python server.py 8000                              # the Measurement Server at h
 node tools/run.mjs https://<name>.trycloudflare.com/   # perform a Run: pre-flight (resolve, warm, read the document), measure, save the Report, print the summary
 node tools/run.mjs reports/<file>.json             # print a recorded Report's summary and its CLAUDE.md current-state line
 node tools/run.mjs compare <earlier>.json <later>.json   # a Paired Run read side by side: every delta, and whose the LCP difference is
-node tools/run.mjs repeat https://<name>.trycloudflare.com/   # a Repeat Visit: two passes through one Chrome profile, the second with storage kept
+node tools/run.mjs repeat https://<name>.trycloudflare.com/   # a Repeat Visit: two navigations of one browser, the second with storage kept
 node tools/bench.mjs https://<name>.trycloudflare.com/ --rounds 3   # a Bench: a warm-up Run of the control, then 3 rounds of every Arm through the one Preview URL; writes benches/<host>-<stamp>.json
 node tools/bench.mjs read benches/<file>.json      # recompute a Bench's reading from the Reports it names, and its CLAUDE.md bench-of-record line
 node --test "tests/**/*.mjs"                       # every assertion: Performance Contract, Measurement Server, Run, Bench
@@ -126,12 +126,14 @@ is ignored in silence — which is how every Repeat Visit before 2026-09-04 meas
 twice. A Repeat Visit whose every request came down in full is therefore marked, because that is
 indistinguishable from the two navigations not having shared a browser; and `channel` reads `node`
 where a Run reads `cli`, which the summary prints, because a Report should say how it was taken.
-Its Report is named `<host>[-<Arm>]-repeat-<moment>.json`
-and `checkReport` accepts it only under the same flag, refusing a cleared-storage Report as a
-Repeat Visit and a kept-storage one as a Run, so neither can be read as the other; `compare` names
-the pair when they are mixed. Only `disableStorageReset` decides which is which — `clearStorageTypes`
-lists what *would* be cleared and keeps listing it when the reset is disabled. CLAUDE.md's current
-state stays a Run's: a Repeat Visit measures the returning visitor, not the first one.
+Its Report is named `<host>[-<Arm>]-repeat-<moment>.json` and `checkReport` accepts it only under the
+same flag, refusing a cleared-storage Report as a Repeat Visit and a kept-storage one as a Run, so
+neither can be read as the other; `compare` names the pair when they are mixed. Both Reports of
+2026-09-04 are kept under `reports/` — the one that measured a first visit twice and the one that
+returned — and `tests/run.mjs` reads the mark off them. Only `disableStorageReset` decides which
+measurement a Report is; `clearStorageTypes` lists what *would* be cleared and keeps listing it when
+the reset is disabled. CLAUDE.md's current state stays a Run's: a Repeat Visit measures the returning
+visitor, not the first one.
 
 **`bench/arms.json` is the one home of every Arm fact**, as `images/slots.json` is for images: the
 container (`GTM-PRVCQ335`, the user's own, and a prose note of what it holds) and the three Arms —
