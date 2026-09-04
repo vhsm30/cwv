@@ -170,6 +170,51 @@ test('robots.txt and llms.txt are plain text and never cached', async () => {
   }
 });
 
+test('every revalidated row carries an ETag and answers a matching request with 304', async () => {
+  // no-cache means revalidate, and until now revalidating cost the whole body every time. The
+  // validator is over the bytes on disk, before gzip, so one document has one ETag whatever the
+  // client asked for — Vary already names Accept-Encoding. The seven rows are listed rather than
+  // derived because server.py's PUBLIC table is Python; the length assertion is what notices when
+  // a row is added there without one being added here.
+  const revalidated = ['/', '/robots.txt', '/llms.txt', '/manifest.webmanifest', '/sw.js', ...arms.arms.filter((arm) => arm.path !== '/').map((arm) => arm.path)];
+  assert.equal(revalidated.length, 7);
+  for (const path of revalidated) {
+    const first = await request(path, { headers: gzip });
+    assert.equal(first.status, 200, path);
+    const etag = first.headers.etag;
+    assert.ok(etag, `${path} must carry an ETag`);
+    assert.match(etag, /^"[0-9a-f]{64}-gzip"$/, `${path}'s gzip ETag is a quoted digest naming its coding`);
+
+    const again = await request(path, { headers: { ...gzip, 'if-none-match': etag } });
+    assert.equal(again.status, 304, `${path} must answer a matching If-None-Match with 304`);
+    assert.equal(again.body.length, 0, `${path}'s 304 carries no body`);
+    assert.equal(again.headers['content-length'], undefined, `${path}'s 304 claims no length`);
+    assert.equal(again.headers['cache-control'], 'no-cache', path);
+    assert.equal(again.headers.etag, etag, path);
+
+    // One URL, two representations: the identity bytes must not answer to the gzip variant's tag.
+    const plain = await request(path, {});
+    assert.notEqual(plain.headers.etag, etag, `${path}'s identity variant needs its own ETag`);
+    const crossed = await request(path, { headers: { 'if-none-match': etag } });
+    assert.equal(crossed.status, 200, `${path} must not 304 an identity request on a gzip tag`);
+
+    const stale = await request(path, { headers: { ...gzip, 'if-none-match': '"0000000000000000000000000000000000000000000000000000000000000000"' } });
+    assert.equal(stale.status, 200, `${path} must answer a stale validator with the body`);
+    assert.equal(stale.headers.etag, etag, `${path}'s ETag did not change`);
+    assert.ok(stale.body.length > 0, path);
+  }
+});
+
+test('an Immutable Asset carries no validator, because it is never revalidated', async () => {
+  // max-age=1y and a filename that is its own cache key: a validator there is dead weight.
+  for (const path of ['/images/hero-768.webp', behaviour, '/favicon.ico']) {
+    const res = await request(path, { headers: gzip });
+    assert.equal(res.status, 200, path);
+    assert.equal(res.headers['cache-control'], IMMUTABLE, path);
+    assert.equal(res.headers.etag, undefined, `${path} needs no ETag`);
+  }
+});
+
 test('a missing asset is a 404 that is never cached', async () => {
   const res = await request('/images/missing.jpg', { headers: gzip });
   assert.equal(res.status, 404);
@@ -204,7 +249,7 @@ test('HEAD carries the same headers as GET and no body', async () => {
   const head = await request('/', { method: 'HEAD', headers: gzip });
   assert.equal(head.status, 200);
   assert.equal(head.body.length, 0);
-  for (const name of ['content-type', 'content-encoding', 'cache-control', 'content-length', 'vary']) {
+  for (const name of ['content-type', 'content-encoding', 'cache-control', 'content-length', 'vary', 'etag']) {
     assert.equal(head.headers[name], get.headers[name], name);
   }
 });

@@ -15,13 +15,16 @@ cache key, and sw.js is the one script in the lab whose filename is deliberately
 Worker registration is identified by its URL, so a Generation-stamped Worker would be a second
 registration, not a replacement. Everything else in the repository -- Reports, the Performance
 Contract, this file -- is a 404 that is never cacheable. tests/measurement-server.mjs asserts all
-three tables through HTTP, the seam a Run crosses.
+three tables through HTTP, the seam a Run crosses. A revalidated row also carries an ETag over its
+bytes and answers a matching If-None-Match with 304, so a repeat view pays for the headers rather
+than the document; an Immutable Asset carries none, because max-age=1y is never revalidated.
 """
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 import gzip
+import hashlib
 import json
 import re
 import sys
@@ -130,22 +133,39 @@ class MeasurementServer(BaseHTTPRequestHandler):
         content_type, compressible = POLICY[file.suffix.lower()]
         body = file.read_bytes()
         encoding = None
-        if compressible:
-            if "gzip" in self.headers.get("Accept-Encoding", "").lower():
-                body = gzip.compress(body, compresslevel=9)
-                encoding = "gzip"
-        self.reply(200, body, content_type, cache, send_body, encoding, vary=compressible)
+        if compressible and "gzip" in self.headers.get("Accept-Encoding", "").lower():
+            encoding = "gzip"
+        # A validator for the rows that must be revalidated, over the bytes on disk -- but one per
+        # representation: the same URL is served gzipped or not, and a cache holding the identity
+        # bytes must not be told the gzip variant is still fresh. Vary picks the variant; the ETag
+        # says which one. An Immutable Asset gets none: max-age=1y is never revalidated, and its
+        # filename is already its cache key.
+        etag = None
+        if cache == NO_CACHE:
+            etag = '"' + hashlib.sha256(body).hexdigest() + ("-gzip" if encoding else "") + '"'
+            if self.headers.get("If-None-Match") == etag:
+                # No body, and no compression paid for one: that is the whole point of asking.
+                self.reply(304, b"", content_type, cache, False, vary=compressible, etag=etag)
+                return
+        if encoding:
+            body = gzip.compress(body, compresslevel=9)
+        self.reply(200, body, content_type, cache, send_body, encoding, vary=compressible, etag=etag)
 
-    def reply(self, status, body, content_type, cache, send_body, encoding=None, vary=False):
+    def reply(self, status, body, content_type, cache, send_body, encoding=None, vary=False, etag=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", cache)
+        if etag:
+            self.send_header("ETag", etag)
         if vary:
             self.send_header("Vary", "Accept-Encoding")
         if encoding:
             self.send_header("Content-Encoding", encoding)
-        # Content-Length on every response, 404s included: keep-alive depends on it.
-        self.send_header("Content-Length", str(len(body)))
+        # Content-Length on every response with a body, 404s included: keep-alive depends on it.
+        # A 304 is defined to carry no body, so its framing is implicit and a length of 0 would
+        # claim the representation is empty when it is not.
+        if status != 304:
+            self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if send_body:
             self.wfile.write(body)
