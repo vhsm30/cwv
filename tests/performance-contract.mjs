@@ -37,6 +37,16 @@ const cropOf = (master, ratio) => {
 };
 const rungHeight = (crop, width) => (width === crop.width ? crop.height : Math.round((width * crop.height) / crop.width));
 
+// The Route table: one description per Route, shared with tools/build-pages.py. There is one
+// Route today; it is a table so P3 extends it rather than inventing a second file.
+// routeTable, not routes: two existing tests already bind `routes` to the in-page routes locally.
+const routeTable = JSON.parse(await readFile(fileOf('./routes.json'), 'utf8'));
+const routeOf = (file) => {
+  const found = routeTable.routes.find((candidate) => candidate.file === file);
+  assert.ok(found, `routes.json names no Route for ${file}`);
+  return found;
+};
+
 const sizesOf = (value) => (value ?? '').replace(/\s+/g, '');
 const rungs = (srcset) => parseSrcset(srcset).sort((a, b) => a.width - b.width);
 const largest = (srcset) => rungs(srcset).at(-1);
@@ -420,6 +430,17 @@ test('picture dissolves without promoting <source> to a layout item', () => {
 
 test('the site-verification tag is preserved', () => {
   assert.ok((page.meta('google-site-verification') ?? '').length > 0);
+});
+
+test('the document names its own canonical URL, the one routes.json gives it', () => {
+  // Relative, never absolute: a Preview URL is random per session, so an absolute canonical would
+  // name a host that stopped existing when the tunnel closed. What it points at is not resolved
+  // here — only that it names no origin, and that the document and the table agree.
+  const route = routeOf('index.html');
+  const canonical = page.elements('link').filter((link) => link.attrs.rel === 'canonical');
+  assert.equal(canonical.length, 1, 'exactly one canonical link');
+  assert.equal(canonical[0].attrs.href, route.canonical);
+  assert.doesNotMatch(route.canonical, /^[a-z][a-z0-9+.-]*:/i, `${route.canonical} names an origin`);
 });
 
 test('llms.txt describes the page it sits beside', async () => {

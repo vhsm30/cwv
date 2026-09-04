@@ -23,7 +23,7 @@ import { loadArms } from '../lib/arms.mjs';
 import { buildArm } from '../tools/build-arms.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const FILES = ['index.html', 'manifest.webmanifest', 'sw.js', 'arm-gtm.html', 'arm-gtm-deferred.html', 'bench/arms.json'];
+const FILES = ['index.html', 'manifest.webmanifest', 'sw.js', 'arm-gtm.html', 'arm-gtm-deferred.html', 'bench/arms.json', 'routes.json'];
 const paths = Object.fromEntries(FILES.map((file) => [file, fileURLToPath(new URL(`../${file}`, import.meta.url))]));
 const originals = Object.fromEntries(FILES.map((file) => [file, readFileSync(paths[file], 'utf8')]));
 
@@ -31,16 +31,25 @@ const originals = Object.fromEntries(FILES.map((file) => [file, readFileSync(pat
 const armsTable = await loadArms();
 
 // A page mutation rebuilds the Arms from the mutated control before the contract runs. Without
-// this, every page row is caught by tests/bench.mjs's Arm-identity rule -- any byte of index.html
-// trips it -- and the row says nothing about the Performance Contract, which is what it is for.
+// this, every page row is caught by tests/bench.mjs's Arm-identity rule — any byte of index.html
+// trips it — and the row says nothing about the Performance Contract, which is what it is for.
 // One row opts out on purpose (`stale`): that rule is what it checks.
 const apply = ({ file, mutate, stale }) => {
   const text = mutate(originals[file], file);
   writeFileSync(paths[file], text);
-  if (file !== 'index.html' || stale) return;
+  // A mutated Route table regenerates the document it describes, exactly as a mutated control
+  // rebuilds the Arms: otherwise the page and the table simply disagree and the equality
+  // assertion fires before the one the row is aiming at.
+  let control = file === 'index.html' ? text : originals['index.html'];
+  if (file === 'routes.json') {
+    const built = spawnSync('python', ['tools/build-pages.py'], { cwd: root, encoding: 'utf8' });
+    if (built.status !== 0) return 'generator'; // the generator refused: that is the row's answer
+    control = readFileSync(paths['index.html'], 'utf8');
+  }
+  if (stale || (file !== 'index.html' && file !== 'routes.json')) return;
   for (const entry of armsTable.arms) {
     if (entry.delivery === 'none') continue;
-    writeFileSync(paths[entry.file], buildArm(text, entry, armsTable.container));
+    writeFileSync(paths[entry.file], buildArm(control, entry, armsTable.container));
   }
 };
 const restore = () => {
@@ -61,6 +70,7 @@ const manifest = (name, mutate, expected) => ({ name, file: 'manifest.webmanifes
 const worker = (name, mutate, expected) => ({ name, file: 'sw.js', mutate, expected });
 const arm = (name, mutate, expected) => ({ name, file: 'arm-gtm.html', mutate, expected });
 const table = (name, mutate, expected) => ({ name, file: 'bench/arms.json', mutate, expected });
+const route = (name, mutate, expected) => ({ name, file: 'routes.json', mutate, expected });
 // The container id, read from the table rather than written here, so a new container moves the rows.
 const containerId = JSON.parse(originals['bench/arms.json']).container.id;
 
@@ -118,6 +128,16 @@ const mutations = [
   // The rule M7 and M8 used to cover by accident, covered on purpose: the same harmless edit, with
   // the Arms left as they were.
   stalePage('M39 index.html changed without node tools/build-arms.mjs', swap('<link rel="preload" as="image"', '<link as="image" rel="preload"'), 'caught'),
+  // Routes of 2026-09-04: the generated head block, and the document facts it carries.
+  page('M40 the canonical link points somewhere else', swap('<link rel="canonical" href="./">', '<link rel="canonical" href="./index.html">'), 'caught'),
+  page('M41 the generated block is deleted', (h, f) => {
+    const begin = must(h, '<!-- routes.json: begin -->', f).indexOf('<!-- routes.json: begin -->');
+    const end = h.indexOf('<!-- routes.json: end -->') + '<!-- routes.json: end -->'.length;
+    return h.slice(0, begin) + h.slice(end);
+  }, 'caught'),
+  // routes.json mutated, the document regenerated from it: the page and the table still agree, so
+  // what fails is the rule the row is aiming at — that a canonical never names an origin.
+  route('M42 routes.json canonicalises the Route to an absolute origin', swap('"canonical": "./"', '"canonical": "https://example.com/"'), 'caught'),
 ];
 
 // The Performance Contract and the Bench's assertions together: an Arm row can only fail the latter.
@@ -131,9 +151,9 @@ if (contract().status !== 0) {
 const rows = [];
 try {
   for (const mutation of mutations) {
-    apply(mutation);
-    const outcome = contract().status === 0 ? 'passes' : 'caught';
-    rows.push({ name: mutation.name, expected: mutation.expected, outcome });
+    const refused = apply(mutation);
+    const outcome = refused || (contract().status === 0 ? 'passes' : 'caught');
+    rows.push({ name: mutation.name, expected: mutation.expected, outcome: outcome === 'generator' ? 'caught' : outcome });
     restore(); // every file at once, so a rebuilt Arm never stacks onto the next row
   }
 } finally {
