@@ -13,13 +13,12 @@
 // ngrok answers browser user-agents with an interstitial unless it is present, and every other
 // tunnel ignores it. The Report is then checked (lib/report.mjs) before it is saved under reports/,
 // named by its own UTC fetchTime, and summarised. Three adapters satisfy `measure`: Lighthouse
-// (lighthouseMeasure), two Lighthouse passes through one Chrome profile (repeatMeasure, the Repeat
-// Visit), and a recorded Report (recordedMeasure); two satisfy `preflight`: the real one and a
-// no-op, which is how tests/run.mjs asserts everything after the measurement without a tunnel or
-// Chrome.
+// (lighthouseMeasure), two navigations of one browser (repeatMeasure, the Repeat Visit), and a
+// recorded Report (recordedMeasure); two satisfy `preflight`: the real one and a no-op, which is
+// how tests/run.mjs asserts everything after the measurement without a tunnel or Chrome.
 import { exec, spawn } from 'node:child_process';
 import dns from 'node:dns/promises';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -194,22 +193,65 @@ export async function lighthouseMeasure(url) {
   }
 }
 
-// The Repeat Visit adapter: two passes through one Chrome profile. The first is an ordinary
-// storage-cleared navigation and its Report is thrown away — it is there to install the Worker.
-// The second keeps storage, so the Worker installed by the first serves what it kept, and that is
-// the Report the Repeat Visit is.
-export async function repeatMeasure(url, { pass = lighthousePass, locate = lighthouseCli } = {}) {
-  const cli = await locate();
-  const workDir = await workDirectory('repeat-');
-  const profile = path.join(workDir, 'profile');
+// Lighthouse's own modules, from the global install this machine already needs for a Run. Imported
+// rather than spawned: the CLI cannot be told which Chrome profile to use, and the Repeat Visit is
+// nothing without one.
+async function globalModule(...segments) {
+  let root;
   try {
-    await pass({ cli, url, workDir, name: 'first', profile });
-    return await pass({ cli, url, workDir, name: 'second', profile, extra: ['--disable-storage-reset'] });
+    ({ stdout: root } = await promisify(exec)('npm root -g'));
+  } catch (error) {
+    throw new Error(`could not ask npm for its global root (${error.message}); Lighthouse 13.x must be installed globally`);
+  }
+  return import(pathToFileURL(path.join(root.trim(), ...segments)).href);
+}
+
+// One headless Chrome, in a profile we name. chrome-launcher invents a temporary profile of its own
+// unless it is given userDataDir here — and it pushes that one FIRST, ahead of anything in
+// chromeFlags, which is decisive: Chromium honours the first --user-data-dir it is given, not the
+// last. A profile passed through --chrome-flags is therefore ignored in silence, which is how every
+// Repeat Visit before 2026-09-04 measured a first visit twice.
+async function launchBrowser(profile) {
+  const chromeLauncher = await globalModule('lighthouse', 'node_modules', 'chrome-launcher', 'dist', 'chrome-launcher.js');
+  // chrome-launcher opens its log files inside the profile before Chrome creates it.
+  await mkdir(profile, { recursive: true });
+  return chromeLauncher.launch({ chromeFlags: ['--headless=new', '--no-sandbox'], userDataDir: profile });
+}
+
+// One navigation of that browser. Every setting matches what lighthousePass passes the CLI, so a
+// Repeat Visit and a Run differ in the two things they are meant to differ in and nothing else: the
+// browser is reused, and the second navigation keeps storage. Only `channel` reads differently —
+// `node` rather than `cli` — and the summary prints it, because a Report should say how it was taken.
+async function apiPass({ browser, url, settings = {} }) {
+  const lighthouse = (await globalModule('lighthouse', 'core', 'index.js')).default;
+  const { lhr } = await lighthouse(url, {
+    port: browser.port,
+    output: ['json'],
+    formFactor: 'mobile',
+    screenEmulation: { mobile: true },
+    extraHeaders: BYPASS_HEADERS,
+    onlyCategories: CATEGORIES.split(','),
+    ...settings,
+  });
+  return lhr;
+}
+
+// The Repeat Visit adapter: two navigations of one browser. The first is an ordinary
+// storage-cleared navigation and its Report is thrown away — it is there to install the Worker. The
+// second keeps storage, so the Worker the first installed serves what it kept, and that is the
+// Report the Repeat Visit is.
+export async function repeatMeasure(url, { pass = apiPass, launch = launchBrowser } = {}) {
+  const workDir = await workDirectory('repeat-');
+  const browser = await launch(path.join(workDir, 'profile'));
+  try {
+    await pass({ browser, url, settings: {} });
+    return await pass({ browser, url, settings: { disableStorageReset: true } });
   } finally {
-    // Chrome may still hold the profile's files (EPERM on Windows — the same failure
-    // chrome-launcher's own cleanup retries around). A complete Report must never be lost to a
-    // cleanup failure, so this retries and then gives up quietly: the directory is under the OS
-    // temp root and costs nothing to leave behind.
+    // chrome-launcher's kill() returns void, not a promise; Promise.resolve takes either, so a
+    // cleanup failure is caught rather than thrown out of the finally in place of the Report.
+    await Promise.resolve(browser.kill()).catch(() => {});
+    // Chrome may still hold the profile's files (EPERM on Windows). A complete Report must never be
+    // lost to a cleanup failure, so this retries and then gives up quietly.
     await rm(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
   }
 }
@@ -256,7 +298,7 @@ if (invokedDirectly) {
         '       node tools/run.mjs compare <earlier.json> <later.json>\n\n' +
         'Performs a Run of the Preview URL, refuses an unreal Report, saves the Report under\n' +
         'reports/ named by its UTC moment of capture, and prints the summary.\n' +
-        'With repeat, performs a Repeat Visit instead: two passes through one Chrome profile,\n' +
+        'With repeat, performs a Repeat Visit instead: two navigations of one browser,\n' +
         'the second with storage kept, so the Worker the first installed serves what it kept.\n' +
         'Given a recorded Report instead, prints its summary without measuring anything.\n' +
         'Given two, compares them: every delta later minus earlier, and whose the LCP difference is.',
@@ -279,7 +321,7 @@ if (invokedDirectly) {
         return fetchPreflight(asked);
       };
       const measure = (asked) => {
-        console.error(`Repeat Visit of ${asked}: one pass to install the Worker, then one with storage kept...`);
+        console.error(`Repeat Visit of ${asked}: one navigation to install the Worker, then one with storage kept, in the same browser...`);
         return repeatMeasure(asked);
       };
       const { path: saved, summary } = await performRun({ url: previewUrl, measure, preflight, repeat: true });

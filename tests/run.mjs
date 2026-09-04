@@ -395,6 +395,27 @@ test('the printed summary shows both shares, and the cold-tunnel artifact withou
   assert.doesNotMatch(cold, /would be/);
 });
 
+test('a Repeat Visit that reused nothing is marked, because that is what a lost profile looks like', () => {
+  // Threshold-free on purpose: a real return reuses *something* — an Immutable Asset from the HTTP
+  // cache, a Shell entry from the Worker, a 304 on a no-cache row — and every one of those reads
+  // transferSize 0 or a validator's few bytes. A Repeat Visit in which every request came down in
+  // full did not return at all. A Run is never marked: a Run is a first visit and reuses nothing by
+  // design.
+  const report = keptStorage(reference.report);
+  const marked = summarize(report).artifacts.find((artifact) => artifact.audit === 'network-requests');
+  assert.ok(marked, 'a Repeat Visit that fetched everything in full is marked');
+  assert.match(marked.reason, /first visit/);
+  assert.equal(summarize(reference.report).artifacts.some((a) => a.audit === 'network-requests'), false,
+    'a Run is not marked for reusing nothing, which is what a first visit does');
+});
+
+test('one reused request is enough to clear the mark', () => {
+  const report = keptStorage(reference.report);
+  const items = report.audits['network-requests'].details.items;
+  items[items.length - 1] = { ...items[items.length - 1], transferSize: 0 };
+  assert.equal(summarize(report).artifacts.some((a) => a.audit === 'network-requests'), false);
+});
+
 // Two Runs side by side. Deltas read later minus earlier, in the order given.
 const pair = (from, to) => compare(byFetchTime(from), byFetchTime(to));
 
@@ -576,23 +597,30 @@ test('reading a saved Repeat Visit back describes it as one, without being told'
   assert.equal(summarize(reference.report).repeat, false);
 });
 
-test('a Repeat Visit is two passes through one Chrome profile, and the second is the one kept', async () => {
+test('a Repeat Visit is two navigations of one browser, and the second is the one kept', async () => {
   // The mechanism is B7's whole substance and none of it survives into the Report: a Report cannot
-  // say which profile measured it, only that storage was kept. So it is asserted at the seam.
-  const calls = [];
-  const pass = async ({ name, profile, extra = [] }) => {
-    calls.push({ name, profile, extra });
-    return extra.includes('--disable-storage-reset') ? keptStorage(reference.report) : reference.report;
+  // say which browser measured it, only that storage was kept. So it is asserted at the seam — and
+  // the seam is the browser now, not a flag, because a flag is what failed silently. Chromium
+  // honours the first --user-data-dir it is given, chrome-launcher's own is always first, and two
+  // passes that each launch their own Chrome are two first visits however the flag is spelled.
+  const launched = [];
+  const launch = async (profile) => {
+    launched.push(profile);
+    return { port: 9222, kill: async () => {} };
   };
-  // locate is injected too: resolving the real CLI would make this the one assertion in the file
-  // that needs Lighthouse installed, and the point of the fakes is a suite that needs neither it,
-  // nor Chrome, nor a tunnel.
-  const kept = await repeatMeasure(PREVIEW_URL, { pass, locate: async () => 'lighthouse/cli/index.js' });
-  assert.equal(calls.length, 2, 'a Repeat Visit is exactly two passes');
-  assert.equal(calls[0].profile, calls[1].profile, 'both passes name one Chrome profile');
-  assert.ok(!calls[0].extra.includes('--disable-storage-reset'), 'the first pass is an ordinary storage-cleared navigation, or it inherits a state nobody chose');
-  assert.ok(calls[1].extra.includes('--disable-storage-reset'), 'the second pass keeps storage, so the Worker the first installed serves what it kept');
-  assert.ok(isRepeatVisit(kept), 'the Report returned is the second pass\'s');
+  const calls = [];
+  const pass = async ({ browser, settings }) => {
+    calls.push({ browser, settings });
+    return settings.disableStorageReset ? keptStorage(reference.report) : reference.report;
+  };
+  const kept = await repeatMeasure(PREVIEW_URL, { pass, launch });
+  assert.equal(launched.length, 1, 'one browser: a second launch is a second first visit');
+  assert.ok(launched[0], 'the browser is launched with a profile directory we named');
+  assert.equal(calls.length, 2, 'a Repeat Visit is exactly two navigations');
+  assert.equal(calls[0].browser, calls[1].browser, 'both navigations go through that one browser');
+  assert.ok(!calls[0].settings.disableStorageReset, 'the first navigation clears storage, or it inherits a state nobody chose');
+  assert.equal(calls[1].settings.disableStorageReset, true, 'the second keeps storage, so the Worker the first installed serves what it kept');
+  assert.ok(isRepeatVisit(kept), 'the Report returned is the second navigation\'s');
 });
 
 test('a Run never overwrites a Report already on disk', async () => {

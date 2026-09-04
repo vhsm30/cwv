@@ -116,9 +116,17 @@ does record is the manifest and the one icon Chrome fetches after reading it.
 
 **A Repeat Visit is the measurement a Run cannot be.** A Run clears storage, so the Worker installs
 fresh and never serves one; what a returning visitor pays was therefore unmeasured (BACKLOG.md B7).
-`node tools/run.mjs repeat <url>` performs two Lighthouse passes through one Chrome profile — the
-first an ordinary navigation, thrown away, which installs the Worker; the second with
-`--disable-storage-reset`, which the Worker serves. Its Report is named `<host>[-<Arm>]-repeat-<moment>.json`
+`node tools/run.mjs repeat <url>` performs two navigations of one browser, driven through
+Lighthouse's Node API — the first an ordinary navigation, thrown away, which installs the Worker;
+the second with `disableStorageReset`, which the Worker serves. The API rather than the CLI because
+the CLI launches a Chrome of its own and cannot be told which profile to use, and one browser across
+both is the whole of what makes the second a return: Chromium honours the **first** `--user-data-dir`
+it is given and chrome-launcher's own is always first, so a profile passed through `--chrome-flags`
+is ignored in silence — which is how every Repeat Visit before 2026-09-04 measured a first visit
+twice. A Repeat Visit whose every request came down in full is therefore marked, because that is
+indistinguishable from the two navigations not having shared a browser; and `channel` reads `node`
+where a Run reads `cli`, which the summary prints, because a Report should say how it was taken.
+Its Report is named `<host>[-<Arm>]-repeat-<moment>.json`
 and `checkReport` accepts it only under the same flag, refusing a cleared-storage Report as a
 Repeat Visit and a kept-storage one as a Run, so neither can be read as the other; `compare` names
 the pair when they are mixed. Only `disableStorageReset` decides which is which — `clearStorageTypes`
