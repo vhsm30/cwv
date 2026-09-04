@@ -13,6 +13,9 @@ where the markers and </head> begin, which is the rigour lib/page.mjs applies in
 rebuild replaces what lies between the markers, so running this twice changes no byte -- and a
 change to index.html still demands node tools/build-arms.mjs, as a Master's change demands its
 Rungs.
+
+og:title and og:description are not in routes.json on purpose: they are the document's own <title>
+and description, read here and written once, so the two cannot drift (BACKLOG.md D15).
 """
 
 import json
@@ -25,6 +28,8 @@ ROUTES = json.loads((ROOT / "routes.json").read_text("utf-8"))
 BEGIN = " routes.json: begin "
 END = " routes.json: end "
 INDENT = "  "
+# The card types Twitter defines; a fifth renders as no preview at all.
+CARDS = {"summary", "summary_large_image", "app", "player"}
 
 
 def escape(text):
@@ -46,6 +51,9 @@ class Head(HTMLParser):
         self.begin = None
         self.end = None
         self.head_close = None
+        self.title = None
+        self.description = None
+        self._in_title = False
         self.feed(source)
         self.close()
 
@@ -53,7 +61,19 @@ class Head(HTMLParser):
         line, column = self.getpos()
         return self.lines[line - 1] + column
 
+    def handle_starttag(self, tag, attrs):
+        if tag == "title":
+            self._in_title = True
+        if tag == "meta" and dict(attrs).get("name") == "description":
+            self.description = dict(attrs).get("content")
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title = (self.title or "") + data
+
     def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
         if tag == "head" and self.head_close is None:
             self.head_close = self.at()
 
@@ -64,10 +84,14 @@ class Head(HTMLParser):
             self.end = self.at() + len(data) + 7  # <!-- + data + -->
 
 
-def block(route):
+def block(route, title, description):
     lines = [
         f"<!--{BEGIN}-->",
         f'<link rel="canonical" href="{escape(route["canonical"])}">',
+        f'<meta property="og:title" content="{escape(title)}">',
+        f'<meta property="og:description" content="{escape(description)}">',
+        f'<meta property="og:image" content="{escape(route["og"]["image"])}">',
+        f'<meta name="twitter:card" content="{escape(route["og"]["card"])}">',
         f"<!--{END}-->",
     ]
     return ("\n" + INDENT).join(lines)
@@ -80,7 +104,13 @@ def build(route):
     with path.open("r", encoding="utf-8", newline="") as handle:
         source = handle.read()
     head = Head(source)
-    text = block(route)
+    if head.title is None:
+        raise SystemExit(f'{route["file"]}: no <title> to write og:title from')
+    if head.description is None:
+        raise SystemExit(f'{route["file"]}: no <meta name="description"> to write og:description from')
+    if route["og"]["card"] not in CARDS:
+        raise SystemExit(f'{route["file"]}: {route["og"]["card"]!r} is not one of {", ".join(sorted(CARDS))}')
+    text = block(route, head.title.strip(), head.description)
     both = head.begin is not None and head.end is not None
     neither = head.begin is None and head.end is None
     if both and head.begin < head.end:

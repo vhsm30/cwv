@@ -1,5 +1,10 @@
 {
   "routes": [
-    { "path": "/", "file": "index.html", "canonical": "./" }
+    {
+      "path": "/",
+      "file": "index.html",
+      "canonical": "./",
+      "og": { "image": "./images/hero-1200.jpg", "card": "summary_large_image" }
+    }
   ]
 }

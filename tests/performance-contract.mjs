@@ -444,6 +444,22 @@ test('the document names its own canonical URL, the one routes.json gives it', (
   assert.equal(canonical[0].attrs.href, route.canonical);
 });
 
+test('the social preview is the page describing itself, not a second copy of its words', async () => {
+  // og:title and og:description are not in routes.json: they are the page's own title and
+  // description, read by the generator and written once, so the two cannot drift (BACKLOG.md D15).
+  // Which card types are legal is tools/build-pages.py's to say — it refuses to write any other,
+  // so no document can carry one.
+  const route = routeOf('index.html');
+  // Both sides are raw source: the page model does not unescape, and the generator re-escapes what
+  // it decoded, so a title of `Foo &amp; Co` is `Foo &amp; Co` in both places.
+  assert.equal(page.property('og:title'), page.title);
+  assert.equal(page.property('og:description'), page.meta('description'));
+  assert.equal(page.property('og:image'), route.og.image);
+  assert.equal(page.meta('twitter:card'), route.og.card);
+  // The preview image is a Rung on disk, checked like every other image fact.
+  await stat(fileOf(route.og.image));
+});
+
 test('llms.txt describes the page it sits beside', async () => {
   const lines = (await readFile(fileOf('./llms.txt'), 'utf8')).split(/\r?\n/);
   const name = page.title.split('|')[0].trim();

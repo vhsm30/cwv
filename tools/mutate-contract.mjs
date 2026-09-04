@@ -140,6 +140,15 @@ const mutations = [
   // what catches this row is not the canonical test but 'all storefront assets are self-hosted' —
   // the regenerated document carries the absolute canonical into page.hrefs, where that rule refuses it.
   route('M42 routes.json canonicalises the Route to an absolute origin', swap('"canonical": "./"', '"canonical": "https://example.com/"'), 'caught'),
+  page('M43 og:title drifts from the document title', swap('<meta property="og:title" content="Field Notes Supply |', '<meta property="og:title" content="Field Notes Co |'), 'caught'),
+  page('M44 og:image drifts from the document', swap('content="./images/hero-1200.jpg">', 'content="./images/hero-1201.jpg">'), 'caught'),
+  route('M45 routes.json names a preview image that is not on disk', swap('"image": "./images/hero-1200.jpg"', '"image": "./images/hero-1201.jpg"'), 'caught'),
+  route('M46 routes.json declares a card type Twitter does not define', swap('"card": "summary_large_image"', '"card": "large_image"'), 'caught'),
+  page('M47 harmless: the generated block\'s tags are reordered', (h, f) => {
+    const title = must(h, '<meta property="og:title"', f).match(/\n  <meta property="og:title"[^\n]*/)[0];
+    const description = h.match(/\n  <meta property="og:description"[^\n]*/)[0];
+    return h.replace(title, '').replace(description, description + title);
+  }, 'passes'),
 ];
 
 // The Performance Contract and the Bench's assertions together: an Arm row can only fail the latter.
