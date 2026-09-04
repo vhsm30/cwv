@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadArms } from '../lib/arms.mjs';
 import { loadPage } from '../lib/page.mjs';
-import { checkReport, compare, formatComparison, formatCurrentState, formatSummary, readReport, reportName, summarize } from '../lib/report.mjs';
+import { checkReport, compare, formatComparison, formatCurrentState, formatSummary, isRepeatVisit, readReport, reportName, summarize } from '../lib/report.mjs';
 import { RunRefused, fetchPreflight, performRun, recordedMeasure } from '../tools/run.mjs';
 
 // The recorded Reports are the second adapter: everything the Run does after Lighthouse returns
@@ -113,16 +113,17 @@ test('a Report of another Arm is not a Run of this Preview URL', () => {
   assert.deepEqual(checkReport(fake, fake.requestedUrl), [], 'against its own URL it is a real Run');
 });
 
-test('every recorded Report is a real Run of its own Preview URL', () => {
-  assert.ok(recorded.length >= 14, 'the 14 recorded Reports are the second adapter');
+test('every recorded Report is a real Run, or a real Repeat Visit, of its own Preview URL', () => {
+  assert.ok(recorded.length >= 14, 'the recorded Reports are the second adapter');
   for (const { name, report } of recorded) {
-    assert.deepEqual(checkReport(report, report.requestedUrl), [], name);
-    assert.deepEqual(checkReport(report), [], `${name} without a Preview URL to compare against`);
+    const repeat = isRepeatVisit(report);
+    assert.deepEqual(checkReport(report, report.requestedUrl, { repeat }), [], name);
+    assert.deepEqual(checkReport(report, undefined, { repeat }), [], `${name} without a Preview URL to compare against`);
   }
 });
 
 test('every recorded Report is named by its own UTC fetchTime, not the local clock', () => {
-  for (const { name, report } of recorded) assert.equal(name, reportName(report));
+  for (const { name, report } of recorded) assert.equal(name, reportName(report, { repeat: isRepeatVisit(report) }));
 });
 
 test('a Report that measured the ngrok interstitial is refused, with the reasons named', () => {
@@ -161,6 +162,15 @@ test('a Report with a runtime error or a non-200 document is refused', () => {
   assert.ok(checkReport(gone, PREVIEW_URL).some((r) => r.includes('404')));
 });
 
+// A Report of a Repeat Visit: storage kept on purpose. Only disableStorageReset is set, because
+// that is the switch that decides — clearStorageTypes lists what would be cleared, and Lighthouse
+// keeps listing it when the reset is disabled.
+const keptStorage = (report) => {
+  const fake = structuredClone(report);
+  fake.configSettings.disableStorageReset = true;
+  return fake;
+};
+
 test('a Report whose storage was kept, or whose Worker or caches survived, is refused', () => {
   // With storage kept, the Worker serves the document from caches: TTFB near zero, LCP collapses,
   // and nothing else in the Report could tell. Every real Run clears both before it navigates.
@@ -177,6 +187,59 @@ test('a Report whose storage was kept, or whose Worker or caches survived, is re
   delete unset.configSettings.disableStorageReset;
   delete unset.configSettings.clearStorageTypes;
   assert.ok(checkReport(unset, PREVIEW_URL).length >= 2, 'unset settings are not trusted either');
+});
+
+test('a Repeat Visit is the Report a Run refuses, and the other way round', () => {
+  const visit = keptStorage(reference.report);
+  assert.deepEqual(checkReport(visit, PREVIEW_URL, { repeat: true }), [], 'storage kept is what a Repeat Visit is');
+  assert.ok(checkReport(visit, PREVIEW_URL).some((r) => /storage/i.test(r)), 'a Run refuses it');
+  const run = checkReport(reference.report, PREVIEW_URL, { repeat: true });
+  assert.ok(run.some((r) => /Run, not a Repeat Visit/.test(r)), run.join('\n'));
+});
+
+test('a Repeat Visit whose Worker served everything is still a real measurement', () => {
+  // The Worker answers from CacheStorage, so a Repeat Visit can record the document and nothing
+  // else. For a Run that means the interstitial; for a Repeat Visit it is the expected outcome,
+  // and the ngrok check above still names an interstitial when there is one.
+  const served = keptStorage(reference.report);
+  served.audits['network-requests'].details.items = [
+    { url: PREVIEW_URL, statusCode: 200, mimeType: 'text/html', resourceType: 'Document', transferSize: 0 },
+  ];
+  assert.deepEqual(checkReport(served, PREVIEW_URL, { repeat: true }), []);
+  const asRun = structuredClone(served);
+  asRun.configSettings.disableStorageReset = false;
+  assert.ok(checkReport(asRun, PREVIEW_URL).some((r) => /own came back/.test(r)), 'a Run still refuses it');
+});
+
+test("a Repeat Visit's Report carries the visit in its name, after the Arm and before the moment", () => {
+  assert.equal(
+    reportName(reference.report, { repeat: true }),
+    'pending-cozily-viscous.ngrok-free.dev-repeat-20260821T172657Z.json',
+  );
+  const arm = structuredClone(reference.report);
+  arm.requestedUrl = `${PREVIEW_URL}arm-gtm.html`;
+  assert.equal(
+    reportName(arm, { repeat: true }),
+    'pending-cozily-viscous.ngrok-free.dev-arm-gtm-repeat-20260821T172657Z.json',
+  );
+  assert.equal(reportName(reference.report), 'pending-cozily-viscous.ngrok-free.dev-20260821T172657Z.json');
+});
+
+test('a summary says which measurement it is, and the printed line says so first', () => {
+  const summary = summarize(reference.report, { repeat: true });
+  assert.equal(summary.repeat, true);
+  assert.equal(summary.name, reportName(reference.report, { repeat: true }));
+  assert.match(formatSummary(summary), /^Repeat Visit of https:/);
+  assert.equal(summarize(reference.report).repeat, false);
+  assert.match(formatSummary(summarize(reference.report)), /^Run of https:/);
+});
+
+test('a Run and a Repeat Visit read side by side are named as the pair they are not', () => {
+  const comparison = compare(reference.report, keptStorage(reference.report));
+  assert.equal(comparison.sameVisit, false);
+  assert.match(formatComparison(comparison), /not a Paired Run/);
+  assert.match(formatComparison(comparison), /Repeat Visit/);
+  assert.equal(compare(reference.report, reference.report).sameVisit, true);
 });
 
 test('the summary reads scores, metrics, requests, bytes, and the known artifacts of a Report', () => {
@@ -705,7 +768,9 @@ test("CLAUDE.md's current state is the newest Report of the control, quoted in t
   const claude = (await readFile(new URL('../CLAUDE.md', import.meta.url), 'utf8')).replace(/\s+/g, ' ');
   const cited = /Current state \(Run of (\S+Z)/.exec(claude);
   assert.ok(cited, 'CLAUDE.md cites no Run as its current state');
-  const controls = recorded.filter(({ report }) => new URL(report.requestedUrl).pathname === '/');
+  // Of the control, and a Run: a Repeat Visit measures a returning visitor, and the current state
+  // is what a first visit costs.
+  const controls = recorded.filter(({ report }) => new URL(report.requestedUrl).pathname === '/' && !isRepeatVisit(report));
   assert.ok(controls.length > 0);
   const newest = controls.reduce((a, b) => (a.report.fetchTime > b.report.fetchTime ? a : b)).report;
   assert.equal(cited[1], newest.fetchTime.replace(/\.\d+Z$/, 'Z'), 'CLAUDE.md cites a Run that is not the newest Report of the control');
