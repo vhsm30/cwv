@@ -908,7 +908,7 @@ repository root. `tools/mutate-contract.mjs:6` recommends the very command that 
 // mid-way is undone by `git checkout .`. Add a
 ```
 
-`tools/mutate-contract.mjs:160` and `:165` (M48 and M51) chain `.replace()` calls whose needles carry
+`tools/mutate-contract.mjs:162` and `:167` (M48 and M51) chain `.replace()` calls whose needles carry
 `\n` and which `must()` does not cover, so a miss is silent rather than an error:
 
 ```
