@@ -172,10 +172,11 @@ test('robots.txt and llms.txt are plain text and never cached', async () => {
 
 test('every revalidated row carries an ETag and answers a matching request with 304', async () => {
   // no-cache means revalidate, and until now revalidating cost the whole body every time. The
-  // validator is over the bytes on disk, before gzip, so one document has one ETag whatever the
-  // client asked for — Vary already names Accept-Encoding. The seven rows are listed rather than
-  // derived because server.py's PUBLIC table is Python; the length assertion is what notices when
-  // a row is added there without one being added here.
+  // validator is over the bytes on disk, before gzip, but one per representation: the same URL is
+  // served gzipped or not, and a cache holding the identity bytes must not be handed the gzip
+  // variant on a matching tag. The seven rows are listed rather than derived because server.py's
+  // PUBLIC table is Python — which means the length assertion notices a new Arm, not a new PUBLIC
+  // row; five of these paths are literals here.
   const revalidated = ['/', '/robots.txt', '/llms.txt', '/manifest.webmanifest', '/sw.js', ...arms.arms.filter((arm) => arm.path !== '/').map((arm) => arm.path)];
   assert.equal(revalidated.length, 7);
   for (const path of revalidated) {
@@ -194,6 +195,7 @@ test('every revalidated row carries an ETag and answers a matching request with 
 
     // One URL, two representations: the identity bytes must not answer to the gzip variant's tag.
     const plain = await request(path, {});
+    assert.match(plain.headers.etag ?? '', /^"[0-9a-f]{64}"$/, `${path}'s identity variant carries its own ETag`);
     assert.notEqual(plain.headers.etag, etag, `${path}'s identity variant needs its own ETag`);
     const crossed = await request(path, { headers: { 'if-none-match': etag } });
     assert.equal(crossed.status, 200, `${path} must not 304 an identity request on a gzip tag`);
