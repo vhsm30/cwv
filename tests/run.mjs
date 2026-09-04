@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { loadArms } from '../lib/arms.mjs';
 import { loadPage } from '../lib/page.mjs';
 import { checkReport, compare, formatComparison, formatCurrentState, formatSummary, isRepeatVisit, readReport, reportName, summarize } from '../lib/report.mjs';
-import { RunRefused, fetchPreflight, performRun, recordedMeasure } from '../tools/run.mjs';
+import { RunRefused, fetchPreflight, performRun, recordedMeasure, repeatMeasure } from '../tools/run.mjs';
 
 // The recorded Reports are the second adapter: everything the Run does after Lighthouse returns
 // (refusing, naming, summarising, writing) is asserted here without a tunnel or Chrome.
@@ -574,6 +574,22 @@ test('reading a saved Repeat Visit back describes it as one, without being told'
   assert.match(formatSummary(summarize(visit)), /^Repeat Visit of https:/);
   assert.match(summarize(visit).name, /-repeat-/);
   assert.equal(summarize(reference.report).repeat, false);
+});
+
+test('a Repeat Visit is two passes through one Chrome profile, and the second is the one kept', async () => {
+  // The mechanism is B7's whole substance and none of it survives into the Report: a Report cannot
+  // say which profile measured it, only that storage was kept. So it is asserted at the seam.
+  const calls = [];
+  const pass = async ({ name, profile, extra = [] }) => {
+    calls.push({ name, profile, extra });
+    return extra.includes('--disable-storage-reset') ? keptStorage(reference.report) : reference.report;
+  };
+  const kept = await repeatMeasure(PREVIEW_URL, { pass });
+  assert.equal(calls.length, 2, 'a Repeat Visit is exactly two passes');
+  assert.equal(calls[0].profile, calls[1].profile, 'both passes name one Chrome profile');
+  assert.ok(!calls[0].extra.includes('--disable-storage-reset'), 'the first pass is an ordinary storage-cleared navigation, or it inherits a state nobody chose');
+  assert.ok(calls[1].extra.includes('--disable-storage-reset'), 'the second pass keeps storage, so the Worker the first installed serves what it kept');
+  assert.ok(isRepeatVisit(kept), 'the Report returned is the second pass\'s');
 });
 
 test('a Run never overwrites a Report already on disk', async () => {

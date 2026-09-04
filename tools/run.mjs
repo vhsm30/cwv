@@ -12,10 +12,11 @@
 // Lighthouse pass, and the Run does not measure the tunnel waking up. The measurement carries ngrok's bypass header: free-tier
 // ngrok answers browser user-agents with an interstitial unless it is present, and every other
 // tunnel ignores it. The Report is then checked (lib/report.mjs) before it is saved under reports/,
-// named by its own UTC fetchTime, and summarised. Two adapters satisfy `measure`: Lighthouse
-// (lighthouseMeasure) and a recorded Report (recordedMeasure), and two satisfy `preflight`: the real
-// one and a no-op, which is how tests/run.mjs asserts everything after the measurement without a
-// tunnel or Chrome.
+// named by its own UTC fetchTime, and summarised. Three adapters satisfy `measure`: Lighthouse
+// (lighthouseMeasure), two Lighthouse passes through one Chrome profile (repeatMeasure, the Repeat
+// Visit), and a recorded Report (recordedMeasure); two satisfy `preflight`: the real one and a
+// no-op, which is how tests/run.mjs asserts everything after the measurement without a tunnel or
+// Chrome.
 import { exec, spawn } from 'node:child_process';
 import dns from 'node:dns/promises';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -197,13 +198,13 @@ export async function lighthouseMeasure(url) {
 // storage-cleared navigation and its Report is thrown away — it is there to install the Worker.
 // The second keeps storage, so the Worker installed by the first serves what it kept, and that is
 // the Report the Repeat Visit is.
-export async function repeatMeasure(url) {
+export async function repeatMeasure(url, { pass = lighthousePass } = {}) {
   const cli = await lighthouseCli();
   const workDir = await workDirectory('repeat-');
   const profile = path.join(workDir, 'profile');
   try {
-    await lighthousePass({ cli, url, workDir, name: 'first', profile });
-    return await lighthousePass({ cli, url, workDir, name: 'second', profile, extra: ['--disable-storage-reset'] });
+    await pass({ cli, url, workDir, name: 'first', profile });
+    return await pass({ cli, url, workDir, name: 'second', profile, extra: ['--disable-storage-reset'] });
   } finally {
     // Chrome may still hold the profile's files (EPERM on Windows — the same failure
     // chrome-launcher's own cleanup retries around). A complete Report must never be lost to a
