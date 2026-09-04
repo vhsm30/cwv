@@ -460,6 +460,24 @@ test('the social preview is the page describing itself, not a second copy of its
   await stat(fileOf(route.og.image));
 });
 
+test('each in-page route is a section of its own, labelled by its own heading', () => {
+  const routes = [...new Set(page.hrefs.filter((href) => href.startsWith('#')))];
+  assert.ok(routes.length >= 2, 'the page offers in-page routes');
+  const headings = new Set(page.elements('h2').map((heading) => heading.attrs.id).filter(Boolean));
+  const sections = routes.map((route) => {
+    const section = page.sections.find((candidate) => candidate.attrs.id === route.slice(1));
+    assert.ok(section, `${route} names a <section>, not an element inside one`);
+    assert.ok(headings.has(section.attrs['aria-labelledby']), `${route} is labelled by a heading of its own`);
+    return section;
+  });
+  // Siblings, never one within another: a route inside another route cannot be arrived at on its own.
+  for (const a of sections) {
+    for (const b of sections) {
+      if (a !== b) assert.ok(a.end <= b.start || b.end <= a.start, `${a.attrs.id} and ${b.attrs.id} are nested`);
+    }
+  }
+});
+
 test('llms.txt describes the page it sits beside', async () => {
   const lines = (await readFile(fileOf('./llms.txt'), 'utf8')).split(/\r?\n/);
   const name = page.title.split('|')[0].trim();

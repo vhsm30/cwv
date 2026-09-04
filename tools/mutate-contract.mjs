@@ -149,6 +149,9 @@ const mutations = [
     const description = h.match(/\n  <meta property="og:description"[^\n]*/)[0];
     return h.replace(title, '').replace(description, description + title);
   }, 'passes'),
+  page('M48 #story is nested back inside #shop', (h, f) => must(h, '<section class="story" id="story"', f)
+    .replace('      </div>\n    </section>\n    <section class="story" id="story" aria-labelledby="story-title">\n', '      </div>\n      <div class="story" id="story" aria-labelledby="story-title">\n')
+    .replace('      </div>\n    </section>\n  </main>', '      </div>\n      </div>\n    </section>\n  </main>'), 'caught'),
 ];
 
 // The Performance Contract and the Bench's assertions together: an Arm row can only fail the latter.
