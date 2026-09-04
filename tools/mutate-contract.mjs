@@ -130,16 +130,17 @@ const mutations = [
   // the Arms left as they were.
   stalePage('M39 index.html changed without node tools/build-arms.mjs', swap('<link rel="preload" as="image"', '<link as="image" rel="preload"'), 'caught'),
   // Routes of 2026-09-04: the generated head block, and the document facts it carries.
-  page('M40 the canonical link points somewhere else', swap('<link rel="canonical" href="./">', '<link rel="canonical" href="./index.html">'), 'caught'),
+  page('M40 the canonical link points somewhere else', swap('<link rel="canonical" href="https://field-notes-supply.example/">', '<link rel="canonical" href="https://field-notes-supply.example/index.html">'), 'caught'),
   page('M41 the generated block is deleted', (h, f) => {
     const begin = must(h, '<!-- routes.json: begin -->', f).indexOf('<!-- routes.json: begin -->');
     const end = h.indexOf('<!-- routes.json: end -->') + '<!-- routes.json: end -->'.length;
     return h.slice(0, begin) + h.slice(end);
   }, 'caught'),
-  // routes.json mutated, the document regenerated from it: the page and the table still agree, so
-  // what catches this row is not the canonical test but 'all storefront assets are self-hosted' —
-  // the regenerated document carries the absolute canonical into page.hrefs, where that rule refuses it.
-  route('M42 routes.json canonicalises the Route to an absolute origin', swap('"canonical": "./"', '"canonical": "https://example.com/"'), 'caught'),
+  // M42 is the regression a real Run caught: a relative canonical scores 0 on Lighthouse's canonical
+  // audit and cost the Storefront eight SEO points. What refuses it now is the contract's own rule
+  // that the canonical is an absolute https URL — the self-hosted rule no longer reads it at all.
+  route('M42 routes.json makes the canonical relative again', swap('"canonical": "https://field-notes-supply.example/"', '"canonical": "./"'), 'caught'),
+  route('M53 routes.json makes the canonical protocol-relative', swap('"canonical": "https://field-notes-supply.example/"', '"canonical": "//field-notes-supply.example/"'), 'caught'),
   page('M43 og:title drifts from the document title', swap('<meta property="og:title" content="Field Notes Supply |', '<meta property="og:title" content="Field Notes Co |'), 'caught'),
   page('M44 og:image drifts from the document', swap('content="./images/hero-1200.jpg">', 'content="./images/hero-1201.jpg">'), 'caught'),
   route('M45 routes.json names a preview image that is not on disk', swap('"image": "./images/hero-1200.jpg"', '"image": "./images/hero-1201.jpg"'), 'caught'),

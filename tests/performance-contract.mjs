@@ -110,7 +110,14 @@ test('every image is offered in a modern format with a JPEG fallback on identica
 });
 
 test('all storefront assets are self-hosted', () => {
-  const references = [...page.assets, ...page.hrefs];
+  // A canonical is metadata, not an asset: the browser never fetches it, and it names the
+  // Storefront's production URL on purpose. Every reference the browser does fetch stays under the
+  // rule. The set is read from the page model, so a second metadata link cannot be smuggled in by
+  // editing this list.
+  const metadata = new Set(page.elements('link')
+    .filter((link) => link.attrs.rel === 'canonical')
+    .map((link) => link.attrs.href));
+  const references = [...page.assets, ...page.hrefs].filter((reference) => !metadata.has(reference));
   assert.ok(references.length > 0);
   for (const reference of references) {
     assert.doesNotMatch(reference, /^[a-z][a-z0-9+.-]*:/i, `${reference} names another origin`);
@@ -433,15 +440,15 @@ test('the site-verification tag is preserved', () => {
 });
 
 test('the document names its own canonical URL, the one routes.json gives it', () => {
-  // Relative, never absolute: a Preview URL is random per session, so an absolute canonical would
-  // name a host that stopped existing when the tunnel closed. What it points at is not resolved
-  // here — only that the document and the table agree. A canonical that names an origin is already
-  // refused by 'all storefront assets are self-hosted', which reads every <link href> — this test's
-  // own href — and catches a protocol-relative //host too, which a doesNotMatch here would not.
+  // Absolute, never relative: Lighthouse refuses a relative canonical outright ("Is not an absolute
+  // URL"), and a Run of 2026-09-04 scored SEO 92 for exactly that before this rule existed. The host
+  // it names is the Storefront's production URL, which is deliberately not the Preview URL — a
+  // canonical names where a page prefers to live, not the tunnel it happens to be served through.
   const route = routeOf('index.html');
   const canonical = page.elements('link').filter((link) => link.attrs.rel === 'canonical');
   assert.equal(canonical.length, 1, 'exactly one canonical link');
   assert.equal(canonical[0].attrs.href, route.canonical);
+  assert.match(route.canonical, /^https:\/\/[^/]+\//, 'the canonical is an absolute https URL, or Lighthouse scores it 0');
 });
 
 test('the social preview is the page describing itself, not a second copy of its words', async () => {

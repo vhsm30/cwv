@@ -3,7 +3,7 @@
     {
       "path": "/",
       "file": "index.html",
-      "canonical": "./",
+      "canonical": "https://field-notes-supply.example/",
       "og": { "image": "./images/hero-1200.jpg", "card": "summary_large_image" }
     }
   ]
