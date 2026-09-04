@@ -157,6 +157,7 @@ const mutations = [
   page('M51 #story is a Route nested inside #shop', (h, f) => must(h, '<section class="story" id="story"', f)
     .replace('      </div>\n    </section>\n    <section class="story" id="story"', '      </div>\n    <section class="story" id="story"')
     .replace('      </div>\n    </section>\n  </main>', '      </div>\n    </section>\n    </section>\n  </main>'), 'caught'),
+  page('M52 the nav is hidden again below 700px', swap('nav{gap:1.2rem;justify-content:center;order:3;padding-top:1rem;width:100%}', 'nav{display:none}'), 'caught'),
 ];
 
 // The Performance Contract and the Bench's assertions together: an Arm row can only fail the latter.

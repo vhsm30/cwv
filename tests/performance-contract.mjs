@@ -482,6 +482,18 @@ test('each in-page route is a section of its own, labelled by its own heading', 
   }
 });
 
+test('the primary navigation survives every media context', () => {
+  // Below 700px the nav used to be display:none with nothing put in its place, so the one form
+  // factor every Run measures had no navigation at all. What replaces it is a wrapped row, not a
+  // disclosure: a toggle would need the behaviour, and the behaviour is a Generation.
+  const routes = [...new Set(page.hrefs.filter((href) => href.startsWith('#')))];
+  assert.ok(page.elements('nav').length >= 1, 'the header carries a nav');
+  for (const context of styles.contexts) {
+    const display = (styles.cascade('nav', context).display ?? '').replace(/\s+/g, '');
+    assert.notEqual(display, 'none', `nav in ${context ?? 'the base stylesheet'} leaves no way to reach ${routes.join(' or ')}`);
+  }
+});
+
 test('llms.txt describes the page it sits beside', async () => {
   const lines = (await readFile(fileOf('./llms.txt'), 'utf8')).split(/\r?\n/);
   const name = page.title.split('|')[0].trim();
