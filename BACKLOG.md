@@ -325,11 +325,11 @@ Recorded, not acted on. The repository was not modified apart from this file.
 |---|---|---|---|
 | B6 | Decide whether the Storefront carries structured data | in-process | Open |
 | D13 | The notebook Slot's Master is a photograph of a tote bag | local-substitutable | Open |
-| D14 | The Storefront declares no canonical | in-process | Open |
-| D15 | No Open Graph or Twitter Card tags | in-process | Open |
+| D14 | The Storefront declares no canonical | in-process | **Done** |
+| D15 | No Open Graph or Twitter Card tags | in-process | **Done** |
 | D16 | The `.add` tap target renders 80x17 px | in-process | Open |
-| D17 | The nav vanishes at 700px with no replacement | in-process | Open |
-| D18 | `#story` is nested inside the `#shop` section | in-process | Open |
+| D17 | The nav vanishes at 700px with no replacement | in-process | **Done** |
+| D18 | `#story` is nested inside the `#shop` section | in-process | **Done** |
 | D19 | `.product-type` clears AA by 0.07 and nothing asserts it | in-process | Open |
 | D20 | The mug and coffee Slots ship a single Rung | local-substitutable | Open |
 | D21 | The Hero preload declares `type="image/webp"` over a `.jpg` href | in-process | Open |
@@ -388,6 +388,9 @@ reasonably could.
 
 ### D14 · The Storefront declares no canonical
 
+**Status. Done** with P2 (2026-09-04). The canonical link, relative because a Preview URL is
+random per session, written by `tools/build-pages.py` from `routes.json`.
+
 **Problem.** There is no `<link rel="canonical">` anywhere in the document.
 
 **Evidence.** The served document was searched for `canonical`; nothing. `index.html:5-12` is the
@@ -398,6 +401,11 @@ the Preview URL, which is a different hostname every session, so it would be wro
 `./start-cloudflare.ps1`. One line, no contract conflict.
 
 ### D15 · No Open Graph or Twitter Card tags
+
+**Status. Done** with P2 (2026-09-04). Open Graph and the Twitter card, with `og:title`/
+`og:description` read from the document rather than written twice, as the item itself asked. The
+preview URLs are document-relative, so a crawler that requires absolute `og:image` will not render
+it; that waits on a stable origin, which this repo does not have and P3 does not give it.
 
 **Problem.** Nothing describes the Storefront to a link preview. A reader pasting the Preview URL
 anywhere gets `<title>` and the meta description, with no image.
@@ -427,6 +435,10 @@ screenshot the Collection at both widths afterwards.
 
 ### D17 · The nav vanishes at 700px with no replacement
 
+**Status. Done** with P2 (2026-09-04). The nav wraps to its own row below 700px rather than
+vanishing. Note why it is not a disclosure: a toggle needs the behaviour, and the behaviour is a
+Generation.
+
 **Problem.** `nav{display:none}` inside `@media(max-width:700px)` removes both "Shop" and "Our
 approach" on a narrow viewport, and nothing takes their place — there is no disclosure control in
 the markup and none in `app.v1.min.js`. The Hero's invitation scrolls to `#shop`, so `#story` has
@@ -441,6 +453,9 @@ scroll away, so this may be a deliberate reading of a one-page Storefront. Worth
 than leaving as an accident of a display rule.
 
 ### D18 · `#story` is nested inside the `#shop` section
+
+**Status. Done** with P2 (2026-09-04). `#story` is its own `<section>` with `aria-labelledby`, and
+`.story` carries the container it used to borrow from `.catalog`.
 
 **Problem.** The nav and `llms.txt` both present "Shop" and "Our approach" as peers. In the markup
 "Our approach" is a `<div class="note" id="story">` inside `<section class="catalog" id="shop"
@@ -513,7 +528,7 @@ CONTEXT.md:30-33 a PWA therefore cannot be a Win here, only a non-regression.
 | # | Item | Dependency category | Status |
 |---|---|---|---|
 | D22 | The keep-alive assertion stays green against a 404 | in-process | **Done** |
-| D23 | The Measurement Server sends no validators, so `no-cache` costs a full download | in-process | Open |
+| D23 | The Measurement Server sends no validators, so `no-cache` costs a full download | in-process | **Done** |
 | D24 | CONTEXT.md and CLAUDE.md disagree on whether a superseded Generation is kept | local-substitutable | Open |
 
 ### D22 · The keep-alive assertion stays green against a 404
@@ -535,6 +550,9 @@ places and only two of them fail when it moves.
 **Shape.** `assert.equal(res.status, 200)` inside the existing loop at `:159`. One line.
 
 ### D23 · The Measurement Server sends no validators, so `no-cache` costs a full download
+
+**Status. Done** with P2 (2026-09-04). An `ETag` over the bytes before gzip on all seven
+`no-cache` rows, a 304 on a matching `If-None-Match`.
 
 **Problem.** `no-cache` means revalidate, not "do not store" — but revalidation needs an `ETag` or
 `Last-Modified` to revalidate against. The Measurement Server sends neither, so every conditional
@@ -606,11 +624,17 @@ was 267 ms against 60 ms here, so it measured the tunnel, and is kept as the rec
 
 | # | Item | Dependency category | Status |
 |---|---|---|---|
-| B7 | Teach the Run to measure a Worker-warm repeat visit | mock (Lighthouse CLI) | Open |
+| B7 | Teach the Run to measure a Worker-warm repeat visit | mock (Lighthouse CLI) | **Done** |
 | B8 | The Run's summary names nothing of the tunnel's share | in-process | **Done** |
 | B9 | The Run refuses a poisoned hostname only after a full Lighthouse pass | mock (Lighthouse CLI) | **Done** |
 
 ### B7 · Teach the Run to measure a Worker-warm repeat visit
+
+**Status. Done** with P2 (2026-09-04). The Repeat Visit: two passes through one Chrome profile,
+`checkReport` under a flag, `<host>-repeat-<moment>.json`, CONTEXT.md's new term. Note the
+deviation from the Shape: only `disableStorageReset` is weighed, because `clearStorageTypes` keeps
+listing both stores when the reset is disabled. Note also what is still unmeasured — a Worker
+topping up a *second* Route, which needs P3.
 
 **Problem.** A Run clears storage before it navigates, so every Run is a first visit and the Worker
 never serves one. What a returning visitor pays — the document from the Shell, every image from the
@@ -692,19 +716,23 @@ e-commerce Core Web Vitals bench in six sub-projects, P0–P5, of which P0 — m
 share and Paired Run; `docs/adr/0001` records the reversal of the no-build-step rule), and P1 — the
 Bench: control, client-side GTM, deferred GTM — is built (spec
 `docs/superpowers/specs/2026-09-03-bench-design.md`, plan `docs/superpowers/plans/2026-09-03-bench.md`;
-CONTEXT.md gained Arm and Bench; nothing listed below was absorbed, B7 being P2's). The plan
-proposes where the items still open would be absorbed, recorded here so the evolution pays the
-backlog down instead of orphaning it; each stays **Open** until its phase is picked and planned,
-per CLAUDE.md's backlog rule.
+CONTEXT.md gained Arm and Bench; nothing listed below was absorbed, B7 being P2's), and P2 — Routes
+— is built (spec `docs/superpowers/specs/2026-09-04-routes-design.md`, plan
+`docs/superpowers/plans/2026-09-04-routes.md`; CONTEXT.md gained Route and Repeat Visit), absorbing
+B7, D14, D15, D17, D18 and D23 below. The plan proposes where the items still open would be
+absorbed, recorded here so the evolution pays the backlog down instead of orphaning it; each stays
+**Open** until its phase is picked and planned, per CLAUDE.md's backlog rule.
 
 | Item | Proposed by the plan for | Why there |
 |---|---|---|
 | B6 structured data | P3 (the catalogue) | Answerable once Products have their own Routes; still without `Offer` |
-| B7 Worker-warm repeat visit | P2 (Routes) | Navigating between Routes is what a Worker changes |
-| D14 canonical · D15 Open Graph · D17 nav below 700px · D18 `#story` nesting | P2 (Routes) | Each is a property of a document a generator would write once |
-| D23 validators for `no-cache` | P2 (Routes), beside B7 | Both are what a repeat view costs, which nothing measures yet |
+| B7 Worker-warm repeat visit | P2 (Routes) — **built** | Navigating between Routes is what a Worker changes |
+| D14 canonical · D15 Open Graph · D17 nav below 700px · D18 `#story` nesting | P2 (Routes) — **built** | Each is a property of a document a generator would write once |
+| D23 validators for `no-cache` | P2 (Routes), beside B7 — **built** | Both are what a repeat view costs, which nothing measures yet |
 
-Unassigned and Open: D11, D13, D16, D19, D20, D21, D24, D25.
+Unassigned and Open: D11, D13, D16, D19, D20, D21, D24, D25. The two Set-aside items premised on
+one URL — no per-Product URLs and a sitemap (`## Set aside on 2026-08-27`) — are still set aside,
+now with a date to revisit: whenever P3 lands a second Route.
 
 ### D25 · `lcpResource`'s prefix match goes ambiguous under a long tunnel hostname
 
@@ -739,6 +767,120 @@ without depending on the prefix at all, or the `selector`/`boundingRect` the nod
 carries could disambiguate against `lib/page.mjs`'s Slot model. Mutation-check it: a fixture
 Report with a short truncated prefix that matches two or more Rungs should still resolve, and one
 where it cannot should say so rather than print `-` silently.
+
+## Found on 2026-09-04
+
+From the reviews of Task 8 (`docs/superpowers/plans/2026-09-04-routes.md`, B7's Report side: a
+Repeat Visit is not a Run) and Task 9 (B7's Run side: two passes through one Chrome profile).
+Recorded, not acted on; the repository was not otherwise modified by Task 10.
+
+| # | Item | Dependency category | Status |
+|---|---|---|---|
+| D26 | `tests/measurement-server.mjs`'s file header uses `--` where the repository's other `.mjs` prose uses `—` | local-substitutable | Open |
+| D27 | `RunRefused`'s message names a refused Repeat Visit a Run | in-process | Open |
+| D28 | A Repeat Visit's Report is accepted on host, a 200 document and the ngrok check alone | in-process | Open |
+| D29 | `formatComparison`'s `!sameVisit` branch has unpinned precedence | in-process | Open |
+
+### D26 · `tests/measurement-server.mjs`'s file header uses `--` where the repository's other `.mjs` prose uses `—`
+
+**Problem.** `tests/measurement-server.mjs`'s file header writes its asides with `--` where the
+repository's other `.mjs` prose (`lib/report.mjs`, `tools/run.mjs`, `tools/mutate-contract.mjs`)
+uses `—`, an em dash. Predates this plan; cosmetic — it changes no byte an assertion reads.
+
+**Evidence.** `tests/measurement-server.mjs:1-2`:
+
+```
+// Lock-in for the Measurement Server. The headers a Run measures -- keep-alive, gzip, immutable
+// caching, HTML never cached -- are asserted through the same seam a Run crosses: HTTP against the
+```
+
+**Shape.** Replace the two `--` with `—`. One file, two characters; not mutation-checked, since no
+assertion reads prose.
+
+### D27 · `RunRefused`'s message names a refused Repeat Visit a Run
+
+**Problem.** `RunRefused`'s message is fixed at `Run refused:` regardless of which measurement was
+being performed, so a refused **Repeat Visit** announces itself as a **Run**. CONTEXT.md keeps the
+two distinct everywhere else, including the summary's first line and the Report's filename
+(`reportName`, `<host>[-<Arm>][-repeat]-<moment>.json`). It is a shared error path — `performRun`
+throws it whether `repeat` is `true` or `false` — which is why it was not a drive-by edit in this
+plan.
+
+**Evidence.** `tools/run.mjs:104-107`:
+
+```
+export class RunRefused extends Error {
+  constructor(reasons) {
+    super(`Run refused:\n${reasons.map((reason) => `  - ${reason}`).join('\n')}`);
+```
+
+`tools/run.mjs:116-123` (`performRun`) throws it identically for a Run and a Repeat Visit.
+
+**Shape.** Thread `repeat` into the message, e.g. `` `${repeat ? 'Repeat Visit' : 'Run'} refused:` ``,
+and mutation-check it: a refused Repeat Visit's printed reasons should read "Repeat Visit refused",
+never "Run refused".
+
+### D28 · A Repeat Visit's Report is accepted on host, a 200 document and the ngrok check alone
+
+**Problem.** On the Repeat Visit path, `checkReport`'s "nothing of the Storefront's own came back"
+guard is relaxed, so acceptance rests on host, a 200 document, and the `cdn.ngrok.com` check alone.
+That check is ngrok-specific: a Cloudflare tunnel serving an HTML error body with a 200 would not
+be named by it. It cannot make a **Run** fake — the guard still applies there — and a document-only
+Report genuinely is the expected Repeat Visit shape (the Worker answers the Shell and the Rungs it
+kept from CacheStorage, so nothing else "of our own" need cross the network), which is why this is
+a finding to record rather than a change to make.
+
+**Evidence.** `lib/report.mjs:160-168`:
+
+```
+  const own = requests.filter(
+    (r) => r !== document && hostOf(r.url) === host && !String(r.mimeType ?? '').startsWith('text/html'),
+  );
+  // Not on a Repeat Visit: the Worker answers the Shell and the Rungs it kept from CacheStorage, so
+  // a document and nothing else is the expected shape rather than evidence of an interstitial —
+  // which the cdn.ngrok.com check above names on its own either way.
+  if (document && !own.length && !repeat) {
+```
+
+`lib/report.mjs:27` is the ngrok-only check: `const isNgrokCdn = (host) => host === 'ngrok.com' || host?.endsWith('.ngrok.com');`.
+
+**Shape.** None proposed today: a Cloudflare quick tunnel has no interstitial and no artifact, so
+nothing currently serves an HTML error body with 200 through one. If that ever changes, a
+same-origin check that compares the document's own bytes against a known-good hash could still
+apply on a Repeat Visit without depending on anything else arriving — recorded here rather than
+built ahead of a Report that needs it.
+
+### D29 · `formatComparison`'s `!sameVisit` branch has unpinned precedence
+
+**Problem.** `formatComparison`'s `!sameVisit` branch is checked first in its `if`/`else if` chain,
+but the only case that exercises it today — a Run compared against a Repeat Visit of the same host
+and document — would also satisfy every later branch's condition, so nothing pins the branch to
+that position. An implementation that checked `!samePreviewUrl` or `!sameDocument` first would still
+pass every existing assertion, and would then head a cross-host Run/Repeat Visit pair with "Two
+Runs, not a Paired Run (two Preview URLs)" — false, since one Report of the pair is not a Run at
+all. A second fixture pairing a Run and a Repeat Visit that also differ in host (or document) would
+pin the order.
+
+**Evidence.** `lib/report.mjs:390-409`:
+
+```
+    samePreviewUrl: hostOf(a.url) === hostOf(b.url),
+    sameDocument: parseUrl(a.url)?.pathname === parseUrl(b.url)?.pathname,
+    sameVisit: isRepeatVisit(earlier) === isRepeatVisit(later),
+    ...
+export function formatComparison(comparison) {
+  ...
+  if (!comparison.sameVisit) {
+    head = `A Run and a Repeat Visit, not a Paired Run: ...`;
+  } else if (!comparison.samePreviewUrl) {
+    head = `Two Runs, not a Paired Run (two Preview URLs): ...`;
+  } else if (!comparison.sameDocument) {
+```
+
+**Shape.** Add a fixture pair to `tests/run.mjs` that is both a Run/Repeat Visit mismatch
+(`!sameVisit`) and a host mismatch (`!samePreviewUrl`), and assert the printed head names it "A Run
+and a Repeat Visit," never "Two Runs" — pinning `!sameVisit` ahead of the other checks rather than
+leaving the order accidental.
 
 ## Set aside on 2026-08-27
 

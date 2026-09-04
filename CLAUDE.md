@@ -13,7 +13,8 @@ cannot silently regress.
 No package manager, no framework, and nothing shipped to the browser has a dependency. Tooling may
 generate what ships — `images/` and `icons/` already are, from PIL — provided the generated files
 are committed and rebuild byte-identically (`docs/adr/0001-tooling-may-generate-what-ships.md`);
-`index.html` is hand-written and hand-minified today.
+`index.html` is hand-written and hand-minified but for one block in its `<head>`, which
+`tools/build-pages.py` writes from `routes.json` between two marker comments.
 
 `CONTEXT.md` defines this project's vocabulary (Run, Report, Preview URL, Win, Lock-in,
 Performance Contract, Generation, Slot, Rung, Master, ...). Use those terms and honour the words it
@@ -28,6 +29,7 @@ python server.py 8000                              # the Measurement Server at h
 node tools/run.mjs https://<name>.trycloudflare.com/   # perform a Run: pre-flight (resolve, warm, read the document), measure, save the Report, print the summary
 node tools/run.mjs reports/<file>.json             # print a recorded Report's summary and its CLAUDE.md current-state line
 node tools/run.mjs compare <earlier>.json <later>.json   # a Paired Run read side by side: every delta, and whose the LCP difference is
+node tools/run.mjs repeat https://<name>.trycloudflare.com/   # a Repeat Visit: two passes through one Chrome profile, the second with storage kept
 node tools/bench.mjs https://<name>.trycloudflare.com/ --rounds 3   # a Bench: a warm-up Run of the control, then 3 rounds of every Arm through the one Preview URL; writes benches/<host>-<stamp>.json
 node tools/bench.mjs read benches/<file>.json      # recompute a Bench's reading from the Reports it names, and its CLAUDE.md bench-of-record line
 node --test "tests/**/*.mjs"                       # every assertion: Performance Contract, Measurement Server, Run, Bench
@@ -36,10 +38,11 @@ node --test tests/measurement-server.mjs           # the Measurement Server alon
 node --test tests/run.mjs                          # the Run alone (recorded Reports, no tunnel or Chrome)
 node --test tests/bench.mjs                        # the Bench alone: the Arms table, the generated Arms, the reading, the record
 node --test --test-name-pattern="lazy" tests/performance-contract.mjs   # one assertion
-node tools/mutate-contract.mjs                     # prove the contract can still fail (38 mutations of the page, the manifest, the Worker, an Arm, the Arms table)
+node tools/mutate-contract.mjs                     # prove the contract can still fail (52 mutations of the page, the manifest, the Worker, an Arm, the Arms table and the Route table)
 python tools/build-images.py                       # rebuild every Rung from the Masters per images/slots.json
 python tools/build-icons.py                        # rebuild every icon and screenshot in icons/ from manifest.webmanifest
 node tools/build-arms.mjs                          # rebuild every Arm document from index.html per bench/arms.json
+python tools/build-pages.py                        # rebuild every Route's generated <head> block from routes.json
 ```
 
 `node --test tests/` fails — the filenames do not match Node's default test glob. Quote the glob
@@ -111,6 +114,17 @@ sees it and revealing it shifts nothing. A Report shows nothing of the Worker: t
 the Shell's fetches happen in the Worker's own context, which the Report does not record — what it
 does record is the manifest and the one icon Chrome fetches after reading it.
 
+**A Repeat Visit is the measurement a Run cannot be.** A Run clears storage, so the Worker installs
+fresh and never serves one; what a returning visitor pays was therefore unmeasured (BACKLOG.md B7).
+`node tools/run.mjs repeat <url>` performs two Lighthouse passes through one Chrome profile — the
+first an ordinary navigation, thrown away, which installs the Worker; the second with
+`--disable-storage-reset`, which the Worker serves. Its Report is named `<host>[-<Arm>]-repeat-<moment>.json`
+and `checkReport` accepts it only under the same flag, refusing a cleared-storage Report as a
+Repeat Visit and a kept-storage one as a Run, so neither can be read as the other; `compare` names
+the pair when they are mixed. Only `disableStorageReset` decides which is which — `clearStorageTypes`
+lists what *would* be cleared and keeps listing it when the reset is disabled. CLAUDE.md's current
+state stays a Run's: a Repeat Visit measures the returning visitor, not the first one.
+
 **`bench/arms.json` is the one home of every Arm fact**, as `images/slots.json` is for images: the
 container (`GTM-PRVCQ335`, the user's own, and a prose note of what it holds) and the three Arms —
 the control (`/`, `index.html`), `gtm` (`/arm-gtm.html`, Google's standard snippet at the top of
@@ -129,6 +143,20 @@ and the control's do not overlap — the control's own spread in the same sessio
 a quoted threshold. Two marks: a cold-tunnel Run, and an Arm Run whose Report holds no request to
 `www.googletagmanager.com` (the container never loaded). The record under `benches/` names the
 Reports; `read` recomputes the reading from them.
+
+**`routes.json` is the one home of every Route fact**, as `images/slots.json` is for images: each
+Route (there is one, `/` → `index.html`) with the URL it canonicalises to and the image and card
+type its social preview uses. Two consumers: `tools/build-pages.py`, which writes the canonical
+link and the Open Graph and Twitter metas into the Route's own document between
+`<!-- routes.json: begin -->` and `<!-- routes.json: end -->`, and the Performance Contract, which
+holds every written value against the source it came from. `og:title` and `og:description` are not
+in the table: they are the document's own `<title>` and description, read by the generator and
+written once, so the two cannot drift. `server.py` does not read it — there is one Route and it is
+already served; a second one is P3's, and that is when a `PUBLIC` row would follow. The generator
+is the first here whose source and output are the same file, it parses with Python's
+`html.parser` rather than any pattern over the markup, and it rebuilds byte-identically. The chain
+runs in one order: `routes.json` → `python tools/build-pages.py` → `index.html` →
+`node tools/build-arms.mjs` → the Arm documents.
 
 `picture{display:contents}` is load-bearing: without it the `<picture>` becomes the grid/flex item
 instead of the `<img>`, and every `.hero-image`/`.product-image` rule stops applying. It must be paired
@@ -175,9 +203,11 @@ When adding assertions, do not build regexes from strings: a `` `\b${name}` `` i
 is a backspace character, not a word boundary, and it made every attribute lookup silently return
 `undefined` while the suite still reported green. Read facts through the page model or from disk
 rather than as literals, and mutation-check new assertions by breaking the thing they guard: add a
-row to `tools/mutate-contract.mjs`, which mutates `index.html`, `manifest.webmanifest` and `sw.js`
-thirty-four ways (restoring each after) and expects thirty to fail the contract and four harmless
-ones to pass. Apply that test while designing
+row to `tools/mutate-contract.mjs`, which mutates the page, the manifest, the Worker, an Arm, the
+Arms table and the Route table fifty-two ways (restoring each after) and expects every row to
+behave as its table says — a page mutation rebuilds the Arms first and a Route-table mutation
+regenerates the document, so what a row reports is the contract's own verdict rather than a
+stale-generated-file failure. Apply that test while designing
 an assertion, not only after writing it: an assertion that restates markup you are about to write
 cannot fail, and it is easiest to propose one in the same breath as the feature it is meant to guard.
 
@@ -249,6 +279,9 @@ reads 96 (`gtm`) and 94 (`gtm-deferred`) against the control's 100 — the first
 - Arm facts change in `bench/arms.json` first; then rebuild with `node tools/build-arms.mjs`. Any
   change to `index.html` rebuilds the Arms (asserted). The container is the user's own; what it
   holds is written in the table's `holds` note whenever it changes, and every bench record copies it.
+- Route facts change in `routes.json` first; then rebuild with `python tools/build-pages.py`, and
+  then `node tools/build-arms.mjs`, because the block lands in `index.html` and every Arm is
+  derived from it. Never hand-edit between the `routes.json:` marker comments.
 - A new Generation of the behaviour is a new filename: the `<script src>`, the `PUBLIC` row, the
   `SHELL` entry and the cache name in `sw.js` move together (the contract ties the last two to the
   first), and the superseded file stays on disk, unserved, asserted 404. `sw.js` itself is never
