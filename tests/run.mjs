@@ -547,6 +547,35 @@ test('a Run writes its Report under the UTC name and returns the summary', async
   assert.deepEqual(await readdir(reportsDir), [reportName(reference.report)]);
 });
 
+test('a Repeat Visit writes its Report under its own name and says which measurement it was', async () => {
+  const reportsDir = await scratchDir();
+  const measure = async () => keptStorage(reference.report);
+  const { path: written, summary } = await performRun({ url: PREVIEW_URL, measure, reportsDir, preflight: noPreflight, repeat: true });
+  assert.equal(path.basename(written), reportName(reference.report, { repeat: true }));
+  assert.match(path.basename(written), /-repeat-/);
+  assert.equal(summary.repeat, true);
+  assert.deepEqual(await readdir(reportsDir), [reportName(reference.report, { repeat: true })]);
+});
+
+test('a Repeat Visit refuses a Report whose storage was cleared, and writes nothing', async () => {
+  const reportsDir = await scratchDir();
+  const measure = async () => reference.report;
+  await assert.rejects(
+    performRun({ url: PREVIEW_URL, measure, reportsDir, preflight: noPreflight, repeat: true }),
+    (error) => error instanceof RunRefused && error.reasons.some((r) => /Run, not a Repeat Visit/.test(r)),
+  );
+  assert.deepEqual(await readdir(reportsDir), []);
+});
+
+test('reading a saved Repeat Visit back describes it as one, without being told', () => {
+  // The command takes a filename, not a flag. What the Report is has to come from the Report.
+  const visit = keptStorage(reference.report);
+  assert.equal(summarize(visit).repeat, true);
+  assert.match(formatSummary(summarize(visit)), /^Repeat Visit of https:/);
+  assert.match(summarize(visit).name, /-repeat-/);
+  assert.equal(summarize(reference.report).repeat, false);
+});
+
 test('a Run never overwrites a Report already on disk', async () => {
   const reportsDir = await scratchDir();
   const measure = recordedMeasure(new URL(reference.name, REPORTS));
@@ -795,6 +824,7 @@ test('the command prints usage without a Preview URL and the reasons when it ref
   const usage = spawnSync(process.execPath, [command], { encoding: 'utf8' });
   assert.equal(usage.status, 2);
   assert.match(usage.stdout + usage.stderr, /preview-url/);
+  assert.match(usage.stdout + usage.stderr, /repeat <preview-url>/, 'the usage names the Repeat Visit');
   const refused = spawnSync(process.execPath, [command, 'http://localhost:8000/'], { encoding: 'utf8' });
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /localhost/);

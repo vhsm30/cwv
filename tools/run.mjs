@@ -109,63 +109,107 @@ export class RunRefused extends Error {
 }
 
 // Perform a Run: refuse anything but a Preview URL, pre-flight (resolve, warm, read the document),
-// measure, refuse an unreal Report, save, summarise.
-export async function performRun({ url, measure = lighthouseMeasure, reportsDir = REPORTS_DIR, preflight = fetchPreflight }) {
+// measure, refuse an unreal Report, save, summarise. With `repeat`, the same procedure performs a
+// Repeat Visit instead (CONTEXT.md): a different measurement, a different Report name, and each
+// refuses the other's Report.
+export async function performRun({ url, measure, reportsDir = REPORTS_DIR, preflight = fetchPreflight, repeat = false }) {
   const problem = previewUrlProblem(url);
   if (problem) throw new RunRefused([problem]);
   const refusals = await preflight(url);
   if (refusals.length) throw new RunRefused(refusals);
-  const report = await measure(url);
-  const reasons = checkReport(report, url);
+  const report = await (measure ?? (repeat ? repeatMeasure : lighthouseMeasure))(url);
+  const reasons = checkReport(report, url, { repeat });
   if (reasons.length) throw new RunRefused(reasons);
 
   const directory = reportsDir instanceof URL ? fileURLToPath(reportsDir) : reportsDir;
-  const target = path.join(directory, reportName(report));
+  const target = path.join(directory, reportName(report, { repeat }));
   try {
     await writeFile(target, JSON.stringify(report, null, 2), { flag: 'wx' });
   } catch (error) {
     if (error.code === 'EEXIST') throw new Error(`${target} already exists; a Report is never overwritten`);
     throw error;
   }
-  return { path: target, summary: summarize(report) };
+  return { path: target, summary: summarize(report, { repeat }) };
+}
+
+// One Lighthouse pass. `profile` is a Chrome user-data directory: two passes naming the same one
+// share a profile, which is how a Worker the first installed is still installed for the second.
+async function lighthousePass({ cli, url, workDir, name, profile, extra = [] }) {
+  const headersFile = path.join(workDir, 'headers.json');
+  const reportFile = path.join(workDir, `${name}.json`);
+  await writeFile(headersFile, JSON.stringify(BYPASS_HEADERS));
+  const args = [
+    cli,
+    url,
+    '--output=json',
+    `--output-path=${reportFile}`,
+    '--form-factor=mobile',
+    '--screenEmulation.mobile',
+    `--extra-headers=${headersFile}`,
+    `--only-categories=${CATEGORIES}`,
+    `--chrome-flags=--headless=new --no-sandbox --user-data-dir=${profile}`,
+    '--quiet',
+    ...extra,
+  ];
+  const { code, stderr } = await finished(spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'] }));
+  let text = null;
+  try {
+    text = await readFile(reportFile, 'utf8');
+  } catch {
+    // No Report at all: the exit code and stderr say why.
+  }
+  if (text === null) {
+    throw new Error(`Lighthouse exited with code ${code} and left no Report${stderr.trim() ? `:\n${stderr.trim()}` : ''}`);
+  }
+  // A non-zero exit after the Report was written is chrome-launcher failing to delete Chrome's
+  // temporary profile (EPERM on Windows). The Report is complete; that noise is not a reason.
+  return JSON.parse(text);
+}
+
+// A working directory whose path holds no space: --chrome-flags is one space-separated string, so
+// a profile directory with a space in it would reach Chrome as two flags.
+async function workDirectory(prefix) {
+  const workDir = await mkdtemp(path.join(tmpdir(), prefix));
+  if (/\s/.test(workDir)) {
+    await rm(workDir, { recursive: true, force: true });
+    throw new Error(`${workDir} has a space in its path, and Chrome flags are one space-separated string; set TEMP to a path without spaces`);
+  }
+  return workDir;
 }
 
 // The Lighthouse adapter: the CLI this machine has installed globally, run without a shell so the
 // header file path and the Chrome flags need no quoting on any platform.
 export async function lighthouseMeasure(url) {
   const cli = await lighthouseCli();
-  const workDir = await mkdtemp(path.join(tmpdir(), 'run-'));
+  const workDir = await workDirectory('run-');
   try {
-    const headersFile = path.join(workDir, 'headers.json');
-    const reportFile = path.join(workDir, 'report.json');
-    await writeFile(headersFile, JSON.stringify(BYPASS_HEADERS));
-    const args = [
-      cli,
-      url,
-      '--output=json',
-      `--output-path=${reportFile}`,
-      '--form-factor=mobile',
-      '--screenEmulation.mobile',
-      `--extra-headers=${headersFile}`,
-      `--only-categories=${CATEGORIES}`,
-      '--chrome-flags=--headless=new --no-sandbox',
-      '--quiet',
-    ];
-    const { code, stderr } = await finished(spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'pipe'] }));
-    let text = null;
-    try {
-      text = await readFile(reportFile, 'utf8');
-    } catch {
-      // No Report at all: the exit code and stderr say why.
-    }
-    if (text === null) {
-      throw new Error(`Lighthouse exited with code ${code} and left no Report${stderr.trim() ? `:\n${stderr.trim()}` : ''}`);
-    }
-    // A non-zero exit after the Report was written is chrome-launcher failing to delete Chrome's
-    // temporary profile (EPERM on Windows). The Report is complete; that noise is not a reason.
-    return JSON.parse(text);
+    return await lighthousePass({ cli, url, workDir, name: 'report', profile: path.join(workDir, 'profile') });
   } finally {
-    await rm(workDir, { recursive: true, force: true });
+    // Chrome may still hold the profile's files (EPERM on Windows — the same failure
+    // chrome-launcher's own cleanup retries around). A complete Report must never be lost to a
+    // cleanup failure, so this retries and then gives up quietly: the directory is under the OS
+    // temp root and costs nothing to leave behind.
+    await rm(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
+  }
+}
+
+// The Repeat Visit adapter: two passes through one Chrome profile. The first is an ordinary
+// storage-cleared navigation and its Report is thrown away — it is there to install the Worker.
+// The second keeps storage, so the Worker installed by the first serves what it kept, and that is
+// the Report the Repeat Visit is.
+export async function repeatMeasure(url) {
+  const cli = await lighthouseCli();
+  const workDir = await workDirectory('repeat-');
+  const profile = path.join(workDir, 'profile');
+  try {
+    await lighthousePass({ cli, url, workDir, name: 'first', profile });
+    return await lighthousePass({ cli, url, workDir, name: 'second', profile, extra: ['--disable-storage-reset'] });
+  } finally {
+    // Chrome may still hold the profile's files (EPERM on Windows — the same failure
+    // chrome-launcher's own cleanup retries around). A complete Report must never be lost to a
+    // cleanup failure, so this retries and then gives up quietly: the directory is under the OS
+    // temp root and costs nothing to leave behind.
+    await rm(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
   }
 }
 
@@ -206,10 +250,13 @@ if (invokedDirectly) {
   const usage = () => {
     console.error(
       'usage: node tools/run.mjs <preview-url>\n' +
+        '       node tools/run.mjs repeat <preview-url>\n' +
         '       node tools/run.mjs <report.json>\n' +
         '       node tools/run.mjs compare <earlier.json> <later.json>\n\n' +
         'Performs a Run of the Preview URL, refuses an unreal Report, saves the Report under\n' +
         'reports/ named by its UTC moment of capture, and prints the summary.\n' +
+        'With repeat, performs a Repeat Visit instead: two passes through one Chrome profile,\n' +
+        'the second with storage kept, so the Worker the first installed serves what it kept.\n' +
         'Given a recorded Report instead, prints its summary without measuring anything.\n' +
         'Given two, compares them: every delta later minus earlier, and whose the LCP difference is.',
     );
@@ -223,6 +270,20 @@ if (invokedDirectly) {
       const [earlier, later] = process.argv.slice(3);
       if (!earlier || !later) usage();
       console.log(formatComparison(compare(await recorded(earlier), await recorded(later))));
+    } else if (target === 'repeat') {
+      const previewUrl = process.argv[3];
+      if (!previewUrl) usage();
+      const preflight = (asked) => {
+        console.error(`Pre-flight: resolving ${new URL(asked).hostname} and warming ${asked}...`);
+        return fetchPreflight(asked);
+      };
+      const measure = (asked) => {
+        console.error(`Repeat Visit of ${asked}: one pass to install the Worker, then one with storage kept...`);
+        return repeatMeasure(asked);
+      };
+      const { path: saved, summary } = await performRun({ url: previewUrl, measure, preflight, repeat: true });
+      console.log(formatSummary(summary));
+      console.log(`Saved ${path.relative(process.cwd(), saved)}`);
     } else if (target.endsWith('.json')) {
       const summary = summarize(await recorded(target));
       console.log(formatSummary(summary));
