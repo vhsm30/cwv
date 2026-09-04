@@ -463,11 +463,15 @@ test('the social preview is the page describing itself, not a second copy of its
 test('each in-page route is a section of its own, labelled by its own heading', () => {
   const routes = [...new Set(page.hrefs.filter((href) => href.startsWith('#')))];
   assert.ok(routes.length >= 2, 'the page offers in-page routes');
-  const headings = new Set(page.elements('h2').map((heading) => heading.attrs.id).filter(Boolean));
+  const headings = page.elements('h2').filter((heading) => heading.attrs.id);
   const sections = routes.map((route) => {
     const section = page.sections.find((candidate) => candidate.attrs.id === route.slice(1));
     assert.ok(section, `${route} names a <section>, not an element inside one`);
-    assert.ok(headings.has(section.attrs['aria-labelledby']), `${route} is labelled by a heading of its own`);
+    // Its own heading, not merely some heading: the id has to resolve to an <h2> inside this
+    // section's own span, or the label belongs to a Route the visitor did not arrive at.
+    const heading = headings.find((candidate) => candidate.attrs.id === section.attrs['aria-labelledby']);
+    assert.ok(heading && heading.start > section.start && heading.start < section.end,
+      `${route} is labelled by a heading of its own`);
     return section;
   });
   // Siblings, never one within another: a route inside another route cannot be arrived at on its own.

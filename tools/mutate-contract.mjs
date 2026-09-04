@@ -152,6 +152,11 @@ const mutations = [
   page('M48 #story is nested back inside #shop', (h, f) => must(h, '<section class="story" id="story"', f)
     .replace('      </div>\n    </section>\n    <section class="story" id="story" aria-labelledby="story-title">\n', '      </div>\n      <div class="story" id="story" aria-labelledby="story-title">\n')
     .replace('      </div>\n    </section>\n  </main>', '      </div>\n      </div>\n    </section>\n  </main>'), 'caught'),
+  page('M49 #story loses the heading that labels it', swap(' aria-labelledby="story-title">', '>'), 'caught'),
+  page('M50 #story is labelled by the other Route\'s heading', swap('aria-labelledby="story-title"', 'aria-labelledby="shop-title"'), 'caught'),
+  page('M51 #story is a Route nested inside #shop', (h, f) => must(h, '<section class="story" id="story"', f)
+    .replace('      </div>\n    </section>\n    <section class="story" id="story"', '      </div>\n    <section class="story" id="story"')
+    .replace('      </div>\n    </section>\n  </main>', '      </div>\n    </section>\n    </section>\n  </main>'), 'caught'),
 ];
 
 // The Performance Contract and the Bench's assertions together: an Arm row can only fail the latter.
