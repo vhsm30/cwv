@@ -584,7 +584,10 @@ test('a Repeat Visit is two passes through one Chrome profile, and the second is
     calls.push({ name, profile, extra });
     return extra.includes('--disable-storage-reset') ? keptStorage(reference.report) : reference.report;
   };
-  const kept = await repeatMeasure(PREVIEW_URL, { pass });
+  // locate is injected too: resolving the real CLI would make this the one assertion in the file
+  // that needs Lighthouse installed, and the point of the fakes is a suite that needs neither it,
+  // nor Chrome, nor a tunnel.
+  const kept = await repeatMeasure(PREVIEW_URL, { pass, locate: async () => 'lighthouse/cli/index.js' });
   assert.equal(calls.length, 2, 'a Repeat Visit is exactly two passes');
   assert.equal(calls[0].profile, calls[1].profile, 'both passes name one Chrome profile');
   assert.ok(!calls[0].extra.includes('--disable-storage-reset'), 'the first pass is an ordinary storage-cleared navigation, or it inherits a state nobody chose');

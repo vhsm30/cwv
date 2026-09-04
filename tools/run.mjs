@@ -198,8 +198,8 @@ export async function lighthouseMeasure(url) {
 // storage-cleared navigation and its Report is thrown away — it is there to install the Worker.
 // The second keeps storage, so the Worker installed by the first serves what it kept, and that is
 // the Report the Repeat Visit is.
-export async function repeatMeasure(url, { pass = lighthousePass } = {}) {
-  const cli = await lighthouseCli();
+export async function repeatMeasure(url, { pass = lighthousePass, locate = lighthouseCli } = {}) {
+  const cli = await locate();
   const workDir = await workDirectory('repeat-');
   const profile = path.join(workDir, 'profile');
   try {
