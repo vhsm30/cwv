@@ -146,3 +146,18 @@ _Avoid_: variant, treatment, version, experiment, test page
 One session of Runs through one Preview URL, every Arm in turn for several rounds, read as each
 Arm's spread against the control's. A cost is real when the two spreads do not overlap.
 _Avoid_: benchmark, A/B test, experiment, study
+
+### Routes
+
+**Route**:
+One URL of the Storefront a Run can be taken against. Its facts -- what it canonicalises to and how
+it previews when shared -- live in routes.json, and `tools/build-pages.py` writes them into the
+document; everything else about the document is hand-written.
+_Avoid_: endpoint, view, screen
+
+**Repeat Visit**:
+A second Lighthouse pass through the Preview URL in the same Chrome profile as the pass before it,
+storage kept, so the Worker that pass installed can serve the Shell. It is not a Run: a Run is
+always a first visit, and each refuses the other's Report rather than letting the two be compared
+by their numbers.
+_Avoid_: cached Run, second Run, reload
