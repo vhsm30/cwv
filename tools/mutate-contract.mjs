@@ -43,6 +43,7 @@ const apply = ({ file, mutate, stale }) => {
   let control = file === 'index.html' ? text : originals['index.html'];
   if (file === 'routes.json') {
     const built = spawnSync('python', ['tools/build-pages.py'], { cwd: root, encoding: 'utf8' });
+    if (built.error) throw built.error; // python itself did not run: a broken harness, not a caught row
     if (built.status !== 0) return 'generator'; // the generator refused: that is the row's answer
     control = readFileSync(paths['index.html'], 'utf8');
   }
@@ -136,7 +137,8 @@ const mutations = [
     return h.slice(0, begin) + h.slice(end);
   }, 'caught'),
   // routes.json mutated, the document regenerated from it: the page and the table still agree, so
-  // what fails is the rule the row is aiming at — that a canonical never names an origin.
+  // what catches this row is not the canonical test but 'all storefront assets are self-hosted' —
+  // the regenerated document carries the absolute canonical into page.hrefs, where that rule refuses it.
   route('M42 routes.json canonicalises the Route to an absolute origin', swap('"canonical": "./"', '"canonical": "https://example.com/"'), 'caught'),
 ];
 

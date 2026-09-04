@@ -435,12 +435,13 @@ test('the site-verification tag is preserved', () => {
 test('the document names its own canonical URL, the one routes.json gives it', () => {
   // Relative, never absolute: a Preview URL is random per session, so an absolute canonical would
   // name a host that stopped existing when the tunnel closed. What it points at is not resolved
-  // here — only that it names no origin, and that the document and the table agree.
+  // here — only that the document and the table agree. A canonical that names an origin is already
+  // refused by 'all storefront assets are self-hosted', which reads every <link href> — this test's
+  // own href — and catches a protocol-relative //host too, which a doesNotMatch here would not.
   const route = routeOf('index.html');
   const canonical = page.elements('link').filter((link) => link.attrs.rel === 'canonical');
   assert.equal(canonical.length, 1, 'exactly one canonical link');
   assert.equal(canonical[0].attrs.href, route.canonical);
-  assert.doesNotMatch(route.canonical, /^[a-z][a-z0-9+.-]*:/i, `${route.canonical} names an origin`);
 });
 
 test('llms.txt describes the page it sits beside', async () => {

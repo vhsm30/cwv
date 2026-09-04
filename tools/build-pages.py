@@ -37,10 +37,12 @@ class Head(HTMLParser):
 
     def __init__(self, source):
         super().__init__()
-        # The first character of each line, so getpos()'s (line, column) reads as an index.
+        # The first character of each line, so getpos()'s (line, column) reads as an index. Split
+        # on "\n" only -- str.splitlines() also breaks on \r, \v, \f and others that
+        # HTMLParser.updatepos does not count, which would desynchronise this table from getpos().
         self.lines = [0]
-        for line in source.splitlines(keepends=True):
-            self.lines.append(self.lines[-1] + len(line))
+        for line in source.split("\n"):
+            self.lines.append(self.lines[-1] + len(line) + 1)
         self.begin = None
         self.end = None
         self.head_close = None
@@ -79,12 +81,18 @@ def build(route):
         source = handle.read()
     head = Head(source)
     text = block(route)
-    if head.begin is not None and head.end is not None:
+    both = head.begin is not None and head.end is not None
+    neither = head.begin is None and head.end is None
+    if both and head.begin < head.end:
         written = source[: head.begin] + text + source[head.end :]
-    elif head.head_close is not None:
+    elif neither:
+        if head.head_close is None:
+            raise SystemExit(f'{route["file"]}: no </head> to write the block before')
         written = source[: head.head_close] + INDENT + text + "\n" + source[head.head_close :]
     else:
-        raise SystemExit(f'{route["file"]}: no </head> to write the block before')
+        # One marker without the other, or the end marker ahead of the begin marker: never insert
+        # a second block or duplicate the span between them, which either state would do silently.
+        raise SystemExit(f'{route["file"]}: the routes.json markers are broken -- one present without the other, or out of order')
     changed = written != source
     if changed:
         with path.open("w", encoding="utf-8", newline="") as handle:
